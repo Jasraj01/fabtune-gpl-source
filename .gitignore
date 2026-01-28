@@ -1,0 +1,117 @@
+# ===============================
+# Built application files
+# ===============================
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# ===============================
+# ART / Dalvik
+# ===============================
+*.dex
+
+# ===============================
+# Java / Kotlin
+# ===============================
+*.class
+.kotlin
+kotlin-classes/
+
+# ===============================
+# Generated files
+# ===============================
+bin/
+gen/
+out/
+build/
+**/build/
+captures/
+
+# ===============================
+# Gradle
+# ===============================
+.gradle/
+
+# ===============================
+# Local configuration
+# ===============================
+local.properties
+
+# ===============================
+# Proguard
+# ===============================
+proguard/
+
+# ===============================
+# Logs
+# ===============================
+*.log
+
+# ===============================
+# Android Studio / IntelliJ
+# ===============================
+*.iml
+.idea/
+.navigation/
+.externalNativeBuild/
+.cxx/
+
+# Android Studio cache & configs
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/gradle.xml
+.idea/assetWizardSettings.xml
+.idea/dictionaries
+.idea/libraries
+.idea/caches
+.idea/modules.xml
+.idea/navEditor.xml
+
+# ===============================
+# VS Code
+# ===============================
+.vscode/
+
+# ===============================
+# macOS / Windows
+# ===============================
+.DS_Store
+Thumbs.db
+
+# ===============================
+# Signing / Keystore (VERY IMPORTANT)
+# ===============================
+*.jks
+*.keystore
+*.pkcs12
+
+# ===============================
+# Firebase / Google services (DO NOT PUBLISH)
+# ===============================
+google-services.json
+firebase.json
+
+# ===============================
+# Secrets / API keys
+# ===============================
+secrets.properties
+apikeys.properties
+admob.properties
+analytics.properties
+
+# ===============================
+# Fastlane
+# ===============================
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+fastlane/readme.md
+
+# ===============================
+# Release artifacts / metadata
+# ===============================
+app/release/
+output-metadata.json
+/app/release/output-metadata.json
