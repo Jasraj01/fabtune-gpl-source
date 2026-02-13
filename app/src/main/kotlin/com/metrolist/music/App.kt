@@ -4,7 +4,6 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.os.Build
 import android.widget.Toast
 import androidx.datastore.preferences.core.edit
 import coil3.ImageLoader
@@ -15,6 +14,7 @@ import coil3.disk.directory
 import coil3.memory.MemoryCache
 import coil3.request.CachePolicy
 import coil3.request.allowHardware
+import coil3.request.allowConversionToBitmap
 import coil3.request.crossfade
 import com.metrolist.innertube.YouTube
 import com.metrolist.innertube.models.YouTubeLocale
@@ -24,8 +24,10 @@ import com.metrolist.music.di.ApplicationScope
 import com.metrolist.music.extensions.toEnum
 import com.metrolist.music.extensions.toInetSocketAddress
 import com.metrolist.music.utils.dataStore
-import com.metrolist.music.utils.get
+import com.metrolist.music.utils.CrashHandler
+import com.metrolist.music.utils.peek
 import com.metrolist.music.utils.reportException
+import com.metrolist.music.utils.warmupCache
 import com.revenuecat.purchases.Purchases
 import com.revenuecat.purchases.PurchasesConfiguration
 import dagger.hilt.android.HiltAndroidApp
@@ -35,7 +37,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
 import timber.log.Timber
@@ -62,6 +63,9 @@ class App : Application(), SingletonImageLoader.Factory {
         )
 
         Timber.plant(Timber.DebugTree())
+
+        // Warm DataStore snapshot cache early to avoid first-read stalls on the main thread.
+        dataStore.warmupCache()
 
         applicationScope.launch {
             initializeSettings()
@@ -163,26 +167,30 @@ class App : Application(), SingletonImageLoader.Factory {
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader {
-        val cacheSize = runBlocking {
-            dataStore.data.map { it[MaxImageCacheSizeKey] ?: 512 }.first()
-        }
+        val cacheSize = dataStore.peek(MaxImageCacheSizeKey) ?: 250
+        val diskCacheSizeBytes = cacheSize * 1024 * 1024L
 
         return ImageLoader.Builder(this).apply {
-            crossfade(true)
-            allowHardware(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+            // Keep crossfade short in lists to avoid frame drops.
+            crossfade(120)
+            allowHardware(true)
+            allowConversionToBitmap(true)
+            memoryCachePolicy(CachePolicy.ENABLED)
+            diskCachePolicy(CachePolicy.ENABLED)
+            networkCachePolicy(CachePolicy.ENABLED)
             // Memory cache for fast image loading (prevents network requests on recomposition)
             memoryCache {
                 MemoryCache.Builder()
                     .maxSizePercent(context, 0.25)
                     .build()
             }
-            if (cacheSize == 0) {
+            if (cacheSize <= 0) {
                 diskCachePolicy(CachePolicy.DISABLED)
             } else {
                 diskCache(
                     DiskCache.Builder()
                         .directory(cacheDir.resolve("coil"))
-                        .maxSizeBytes(cacheSize * 1024 * 1024L)
+                        .maxSizeBytes(diskCacheSizeBytes)
                         .build()
                 )
             }

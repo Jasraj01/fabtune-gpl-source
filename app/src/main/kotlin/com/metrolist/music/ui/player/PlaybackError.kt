@@ -38,7 +38,23 @@ fun PlaybackError(
         )
 
         Text(
-            text = error.cause?.cause?.message ?: stringResource(R.string.error_unknown),
+            // ADVANCED FIX – Map internal errors to user-friendly messages only
+            text = when (error.errorCode) {
+                PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+                PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+                PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+                PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE -> {
+                    stringResource(R.string.error_no_internet)
+                }
+                PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
+                PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+                PlaybackException.ERROR_CODE_REMOTE_ERROR -> {
+                    stringResource(R.string.error_unknown)
+                }
+                else -> {
+                    stringResource(R.string.error_unknown)
+                }
+            },
             style = MaterialTheme.typography.bodyMedium,
         )
     }

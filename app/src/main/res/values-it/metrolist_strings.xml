@@ -152,4 +152,14 @@
     <string name="sensitivity_percentage">%1$d%%</string>
     <string name="subscribe">Iscriviti</string>
     <string name="subscribed">Iscritto</string>
+
+    <!-- App bar Get Plus chip -->
+    <string name="get_plus_chip_label_text">Ottieni Plus</string>
+    <string name="get_plus_chip_plus_symbol">+</string>
+
+    <!-- Unlimited downloads banner -->
+    <string name="unlimited_downloads_banner_title">Ottieni download illimitati</string>
+    <string name="unlimited_downloads_banner_subtitle">Goditi l\'ascolto SENZA pubblicita!</string>
+    <string name="unlimited_downloads_banner_unlock">Sblocca</string>
+    <string name="unlimited_downloads_banner_crown_content_description">Icona corona premium</string>
 </resources>

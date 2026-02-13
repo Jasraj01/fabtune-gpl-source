@@ -1,3 +1,8 @@
+/**
+ * Metrolist Project (C) 2026
+ * Licensed under GPL-3.0 | See git history for contributors
+ */
+
 package com.metrolist.music.ui.screens.library
 
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -17,6 +22,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -69,7 +75,7 @@ import com.metrolist.music.viewmodels.LibraryAlbumsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryAlbumsScreen(
     navController: NavController,
@@ -78,6 +84,7 @@ fun LibraryAlbumsScreen(
 ) {
     val menuState = LocalMenuState.current
     val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
     val playerConnection = LocalPlayerConnection.current ?: return
     val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
     val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
@@ -89,7 +96,7 @@ fun LibraryAlbumsScreen(
         AlbumSortType.CREATE_DATE
     )
     val (sortDescending, onSortDescendingChange) = rememberPreference(AlbumSortDescendingKey, true)
-    val gridItemSize by rememberEnumPreference(GridItemsSizeKey, GridItemSize.SMALL)
+    val gridItemSize by rememberEnumPreference(GridItemsSizeKey, GridItemSize.BIG)
 
     val (ytmSync) = rememberPreference(YtmSyncKey, true)
     val hideExplicit by rememberPreference(key = HideExplicitKey, defaultValue = false)
@@ -109,10 +116,12 @@ fun LibraryAlbumsScreen(
             )
             ChipsRow(
                 chips =
-                    listOf(
-                        AlbumFilter.LIKED to stringResource(R.string.filter_liked),
-                        AlbumFilter.LIBRARY to stringResource(R.string.filter_library)
-                    ),
+                listOf(
+                    AlbumFilter.LIKED to stringResource(R.string.filter_liked),
+                    AlbumFilter.LIBRARY to stringResource(R.string.filter_library),
+                    // Uploaded feature is temporarily disabled
+                    // AlbumFilter.UPLOADED to stringResource(R.string.filter_uploaded)
+                ),
                 currentValue = filter,
                 onValueUpdate = {
                     filter = it
@@ -131,8 +140,6 @@ fun LibraryAlbumsScreen(
     }
 
     val albums by viewModel.allAlbums.collectAsState()
-
-    val coroutineScope = rememberCoroutineScope()
 
     val lazyListState = rememberLazyListState()
     val lazyGridState = rememberLazyGridState()
@@ -189,12 +196,12 @@ fun LibraryAlbumsScreen(
             ) {
                 Icon(
                     painter =
-                        painterResource(
-                            when (viewType) {
-                                LibraryViewType.LIST -> R.drawable.list
-                                LibraryViewType.GRID -> R.drawable.grid_view
-                            },
-                        ),
+                    painterResource(
+                        when (viewType) {
+                            LibraryViewType.LIST -> R.drawable.list
+                            LibraryViewType.GRID -> R.drawable.grid_view
+                        },
+                    ),
                     contentDescription = null,
                 )
             }
@@ -262,9 +269,9 @@ fun LibraryAlbumsScreen(
                 LazyVerticalGrid(
                     state = lazyGridState,
                     columns =
-                        GridCells.Adaptive(
-                            minSize = GridThumbnailHeight + if (gridItemSize == GridItemSize.BIG) 24.dp else (-24).dp,
-                        ),
+                    GridCells.Adaptive(
+                        minSize = GridThumbnailHeight + if (gridItemSize == GridItemSize.BIG) 24.dp else (-24).dp,
+                    ),
                     contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
                 ) {
                     item(

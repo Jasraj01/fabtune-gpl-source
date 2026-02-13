@@ -1,3 +1,8 @@
+/**
+ * Metrolist Project (C) 2026
+ * Licensed under GPL-3.0 | See git history for contributors
+ */
+
 @file:OptIn(ExperimentalCoroutinesApi::class)
 
 package com.metrolist.music.viewmodels
@@ -24,6 +29,7 @@ import com.metrolist.music.constants.ArtistSortDescendingKey
 import com.metrolist.music.constants.ArtistSortType
 import com.metrolist.music.constants.ArtistSortTypeKey
 import com.metrolist.music.constants.HideExplicitKey
+import com.metrolist.music.constants.HideVideoSongsKey
 import com.metrolist.music.constants.LibraryFilter
 import com.metrolist.music.constants.PlaylistSortDescendingKey
 import com.metrolist.music.constants.PlaylistSortType
@@ -37,6 +43,7 @@ import com.metrolist.music.constants.TopSize
 import com.metrolist.music.db.MusicDatabase
 import com.metrolist.music.extensions.filterExplicit
 import com.metrolist.music.extensions.filterExplicitAlbums
+//import com.metrolist.music.extensions.filterVideoSongs
 import com.metrolist.music.extensions.reversed
 import com.metrolist.music.extensions.toEnum
 import com.metrolist.music.playback.DownloadUtil
@@ -48,7 +55,9 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
@@ -73,13 +82,14 @@ constructor(
     val allSongs =
         context.dataStore.data
             .map {
-                Pair(
+                Triple(
                     Triple(
                         it[SongFilterKey].toEnum(SongFilter.LIKED),
                         it[SongSortTypeKey].toEnum(SongSortType.CREATE_DATE),
                         (it[SongSortDescendingKey] ?: true),
                     ),
-                    it[HideExplicitKey] ?: false
+                    it[HideExplicitKey] ?: false,
+                    it[HideVideoSongsKey] ?: false
                 )
             }.distinctUntilChanged()
             .flatMapLatest { (filterSort, hideExplicit) ->
@@ -136,6 +146,11 @@ constructor(
     fun syncLibrarySongs() {
         viewModelScope.launch(Dispatchers.IO) { syncUtils.syncLibrarySongs() }
     }
+
+    // Uploaded feature is temporarily disabled
+    fun syncUploadedSongs() {
+        // viewModelScope.launch(Dispatchers.IO) { syncUtils.syncUploadedSongs() }
+    }
 }
 
 @HiltViewModel
@@ -157,8 +172,8 @@ constructor(
             }.distinctUntilChanged()
             .flatMapLatest { (filter, sortType, descending) ->
                 when (filter) {
-                    ArtistFilter.LIBRARY -> database.artists(sortType, descending)
                     ArtistFilter.LIKED -> database.artistsBookmarked(sortType, descending)
+                    ArtistFilter.LIBRARY -> database.artists(sortType, descending)
                 }
             }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
@@ -211,8 +226,11 @@ constructor(
             .flatMapLatest { (filterSort, hideExplicit) ->
                 val (filter, sortType, descending) = filterSort
                 when (filter) {
-                    AlbumFilter.LIBRARY -> database.albums(sortType, descending).map { it.filterExplicitAlbums(hideExplicit) }
                     AlbumFilter.LIKED -> database.albumsLiked(sortType, descending).map { it.filterExplicitAlbums(hideExplicit) }
+                    AlbumFilter.LIBRARY -> database.albums(sortType, descending).map { it.filterExplicitAlbums(hideExplicit) }
+                    // Uploaded feature is temporarily disabled
+//                    AlbumFilter.UPLOADED -> kotlinx.coroutines.flow.flowOf(emptyList())
+                    // AlbumFilter.UPLOADED -> database.albumsUploaded(sortType, descending).map { it.filterExplicitAlbums(hideExplicit) }
                 }
             }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
@@ -228,7 +246,6 @@ constructor(
                         it.album.songCount == 0
                     }.forEach { album ->
                         YouTube
-                            .album(album.id)
                             .album(album.id)
                             .onSuccess { albumPage ->
                                 database.query {
@@ -293,10 +310,11 @@ constructor(
     val songs =
         context.dataStore.data
             .map {
-                Pair(
+                Triple(
                     it[ArtistSongSortTypeKey].toEnum(ArtistSongSortType.CREATE_DATE) to (it[ArtistSongSortDescendingKey]
                         ?: true),
-                    it[HideExplicitKey] ?: false
+                    it[HideExplicitKey] ?: false,
+                    it[HideVideoSongsKey] ?: false
                 )
             }.distinctUntilChanged()
             .flatMapLatest { (sortDesc, hideExplicit) ->
@@ -313,15 +331,23 @@ constructor(
     database: MusicDatabase,
     private val syncUtils: SyncUtils,
 ) : ViewModel() {
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing = _isRefreshing.asStateFlow()
+
     val syncAllLibrary = {
+         viewModelScope.launch(Dispatchers.IO) {
+             syncUtils.tryAutoSync()
+         }
+    }
+
+    fun refresh() {
         viewModelScope.launch(Dispatchers.IO) {
-            syncUtils.syncLikedSongs()
-            syncUtils.syncLibrarySongs()
-            syncUtils.syncArtistsSubscriptions()
-            syncUtils.syncLikedAlbums()
-            syncUtils.syncSavedPlaylists()
+            _isRefreshing.value = true
+//            syncUtils.performFullSyncSuspend()
+            _isRefreshing.value = false
         }
     }
+
     val topValue =
         context.dataStore.data
             .map { it[TopSize] ?: "50" }

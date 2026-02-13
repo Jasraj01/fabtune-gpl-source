@@ -1,3 +1,7 @@
+/**
+ * Metrolist Project (C) 2026
+ * Licensed under GPL-3.0 | See git history for contributors
+ */
 
 package com.metrolist.music.ui.player
 
@@ -60,6 +64,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -78,6 +83,10 @@ import com.metrolist.music.constants.ThumbnailCornerRadius
 import com.metrolist.music.ui.component.CastButton
 import com.metrolist.music.utils.rememberEnumPreference
 import com.metrolist.music.utils.rememberPreference
+import com.revenuecat.purchases.CustomerInfo
+import com.revenuecat.purchases.Purchases
+import com.revenuecat.purchases.PurchasesError
+import com.revenuecat.purchases.interfaces.ReceiveCustomerInfoCallback
 import kotlinx.coroutines.delay
 
 /**
@@ -187,6 +196,8 @@ private fun getTextColor(playerBackground: PlayerBackgroundStyle): Color {
     }
 }
 
+
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun Thumbnail(
@@ -195,6 +206,31 @@ fun Thumbnail(
     isPlayerExpanded: () -> Boolean = { true },
     isLandscape: Boolean = false,
 ) {
+
+    val adViewModel = viewModel<AdViewModel>()
+
+    // ✅ NEW: Check subscription status
+    val subscriptionState = remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        Purchases.sharedInstance.getCustomerInfo(object : ReceiveCustomerInfoCallback {
+            override fun onReceived(customerInfo: CustomerInfo) {
+                subscriptionState.value = customerInfo.entitlements.active.containsKey("premium")
+            }
+            override fun onError(error: PurchasesError) {
+                subscriptionState.value = false
+            }
+        })
+    }
+    val isSubscribed = subscriptionState.value
+
+    val adFullyLoaded by remember {
+        derivedStateOf { adViewModel.adFullyLoaded }
+    }
+
+    val loadedAdMediaId by remember {
+        derivedStateOf { adViewModel.loadedAdMediaId }
+    }
+
     val playerConnection = LocalPlayerConnection.current ?: return
     val context = LocalContext.current
     val layoutDirection = LocalLayoutDirection.current
@@ -217,9 +253,6 @@ fun Thumbnail(
     // Pre-calculate text color based on background style
     val textBackgroundColor = getTextColor(playerBackground)
 
-    // Grid state
-    val thumbnailLazyGridState = rememberLazyGridState()
-
     // Calculate media items data - memoized
     val mediaItemsData by remember(
         playerConnection.player.currentMediaItemIndex,
@@ -233,6 +266,10 @@ fun Thumbnail(
 
     val mediaItems = mediaItemsData.items
     val currentMediaIndex = mediaItemsData.currentIndex
+
+    val thumbnailLazyGridState = rememberLazyGridState(
+        initialFirstVisibleItemIndex = if (currentMediaIndex >= 0) currentMediaIndex else 0
+    )
 
     // Snap behavior - created once per grid state
     val thumbnailSnapLayoutInfoProvider = remember(thumbnailLazyGridState) {
@@ -248,6 +285,14 @@ fun Thumbnail(
     // Current item tracking - derived state for efficiency
     val currentItem by remember { derivedStateOf { thumbnailLazyGridState.firstVisibleItemIndex } }
     val itemScrollOffset by remember { derivedStateOf { thumbnailLazyGridState.firstVisibleItemScrollOffset } }
+
+    LaunchedEffect(mediaItems.size, currentMediaIndex) {
+        if (mediaItems.isNotEmpty() && currentMediaIndex >= 0 && currentMediaIndex < mediaItems.size) {
+            if (thumbnailLazyGridState.firstVisibleItemIndex != currentMediaIndex) {
+                thumbnailLazyGridState.scrollToItem(currentMediaIndex)
+            }
+        }
+    }
 
     // Handle swipe to change song
     LaunchedEffect(itemScrollOffset) {
@@ -378,6 +423,10 @@ fun Thumbnail(
                                 item.mediaId.ifEmpty { "unknown_${item.hashCode()}" }
                             }
                         ) { item ->
+
+                            val index = mediaItems.indexOf(item)
+                            val isCurrent = index == currentMediaIndex
+
                             ThumbnailItem(
                                 item = item,
                                 dimensions = dimensions,
@@ -387,7 +436,13 @@ fun Thumbnail(
                                 onSeek = onSeekCallback,
                                 playerConnection = playerConnection,
                                 context = context,
-                                isLandscape = isLandscape
+                                isLandscape = isLandscape,
+                                isCurrent = isCurrent,
+                                isPlayerExpanded = isPlayerExpanded(),
+                                adFullyLoaded = adFullyLoaded,
+                                loadedAdMediaId = loadedAdMediaId,
+                                adViewModel = adViewModel,
+                                isSubscribed = isSubscribed
                             )
                         }
                     }
@@ -469,7 +524,13 @@ private fun ThumbnailItem(
     playerConnection: com.metrolist.music.playback.PlayerConnection,
     context: android.content.Context,
     modifier: Modifier = Modifier,
-    isLandscape: Boolean = false
+    isLandscape: Boolean = false,
+    isCurrent: Boolean,
+    isPlayerExpanded: Boolean,
+    adFullyLoaded: Boolean,
+    loadedAdMediaId: String?,
+    adViewModel: AdViewModel,
+    isSubscribed: Boolean
 ) {
     val incrementalSeekSkipEnabled by rememberPreference(SeekExtraSeconds, defaultValue = false)
     var skipMultiplier by remember { mutableIntStateOf(1) }
@@ -527,16 +588,53 @@ private fun ThumbnailItem(
                 .size(dimensions.thumbnailSize)
                 .clip(RoundedCornerShape(dimensions.cornerRadius))
         ) {
+            //  FIX: Thumbnail visibility logic
+            // If subscribed, always show thumbnail (no ads)
+            // If not subscribed, hide thumbnail when ad is fully loaded
+            val shouldShowThumbnail = when {
+                isSubscribed -> true  //  Always show thumbnail for subscribed users
+                !isPlayerExpanded -> true
+                !isCurrent -> true
+                !(adFullyLoaded && loadedAdMediaId == item.mediaId) -> true
+                else -> false
+            }
 
-                ThumbnailImage(artworkUri = item.mediaMetadata.artworkUri?.toString())
+            // Thumbnail layer
+            AnimatedVisibility(
+                visible = shouldShowThumbnail,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                ThumbnailImage(
+                    artworkUri = item.mediaMetadata.artworkUri?.toString()
+                )
+            }
+
+            //  FIX: Ad only shows for non-subscribed users
+            if (isCurrent && isPlayerExpanded && !isSubscribed) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    BannerAdWithTimer(
+                        adUnitId = "",
+                        adViewModel = adViewModel,
+                        mediaId = item.mediaId,
+                        onAdClosed = {},
+                        onAdOpened = {},
+                        isSubscribed = isSubscribed  //  Pass subscription status
+                    )
+                }
+            }
+
 
             // Cast button at top-right corner of thumbnail
-            CastButton(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp),
-                tintColor = textBackgroundColor
-            )
+//            CastButton(
+//                modifier = Modifier
+//                    .align(Alignment.TopEnd)
+//                    .padding(8.dp),
+//                tintColor = textBackgroundColor
+//            )
         }
     }
 }

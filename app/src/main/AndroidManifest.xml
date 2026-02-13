@@ -40,6 +40,13 @@
             android:required="false" />
 
         <activity
+            android:name=".ui.screens.CrashActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Metrolist"
+            android:excludeFromRecents="true"
+            android:process=":crash" />
+
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
@@ -175,9 +182,12 @@
         <receiver
             android:name=".widget.MusicWidgetReceiver"
             android:exported="true"
-            android:label="@string/app_name">
+            android:label="@string/widget_music_player">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.metrolist.music.widget.PLAY_PAUSE" />
+                <action android:name="com.metrolist.music.widget.LIKE" />
+                <action android:name="com.metrolist.music.widget.UPDATE_WIDGET" />
             </intent-filter>
 
             <meta-data
@@ -189,9 +199,12 @@
         <receiver
             android:name=".widget.TurntableWidgetReceiver"
             android:exported="true"
-            android:label="Turntable">
+            android:label="@string/widget_turntable">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.metrolist.music.widget.TURNTABLE_PLAY_PAUSE" />
+                <action android:name="com.metrolist.music.widget.TURNTABLE_LIKE" />
+                <action android:name="com.metrolist.music.widget.UPDATE_TURNTABLE_WIDGET" />
             </intent-filter>
 
             <meta-data

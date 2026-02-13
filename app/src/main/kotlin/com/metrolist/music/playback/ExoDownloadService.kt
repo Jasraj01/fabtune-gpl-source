@@ -11,7 +11,6 @@ import androidx.media3.exoplayer.offline.Download
 import androidx.media3.exoplayer.offline.DownloadManager
 import androidx.media3.exoplayer.offline.DownloadNotificationHelper
 import androidx.media3.exoplayer.offline.DownloadService
-import androidx.media3.exoplayer.scheduler.PlatformScheduler
 import androidx.media3.exoplayer.scheduler.Scheduler
 import com.metrolist.music.R
 import dagger.hilt.android.AndroidEntryPoint
@@ -40,7 +39,11 @@ class ExoDownloadService : DownloadService(
 
     override fun getDownloadManager() = downloadUtil.downloadManager
 
-    override fun getScheduler(): Scheduler = PlatformScheduler(this, JOB_ID)
+    override fun getScheduler(): Scheduler =
+        androidx.media3.exoplayer.scheduler.PlatformScheduler(
+            this,
+            JOB_ID
+        )
 
     override fun getForegroundNotification(
         downloads: MutableList<Download>,

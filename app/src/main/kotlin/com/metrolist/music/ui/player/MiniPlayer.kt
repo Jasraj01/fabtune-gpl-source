@@ -325,14 +325,20 @@ private fun NewMiniPlayer(
                 }
 
                 // Subscribe button - isolated composable
-                mediaMetadata?.artists?.firstOrNull()?.id?.let { artistId ->
-                    SubscribeButton(artistId = artistId, metadata = mediaMetadata!!)
-                }
+                NewMiniPlayerControlPlayPause(
+                    playbackState = playbackState,
+                    isCasting = isCasting,
+                    castHandler = castHandler,
+                    playerConnection = playerConnection
+                )
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Favorite button - isolated composable
-                mediaMetadata?.let { FavoriteButton(songId = it.id) }
+                NewMiniPlayerSkipNext(
+                    canSkipNext = canSkipNext,
+                    onSkip = { playerConnection.seekToNext() }
+                )
+
             }
         }
     }
@@ -403,20 +409,10 @@ private fun NewMiniPlayerPlayButton(
                 .size(40.dp)
                 .clip(CircleShape)
                 .border(1.dp, outlineColor.copy(alpha = 0.3f), CircleShape)
-                .clickable {
-                    if (isCasting) {
-                        if (castIsPlaying) castHandler?.pause() else castHandler?.play()
-                    } else if (playbackState == Player.STATE_ENDED) {
-                        playerConnection.player.seekTo(0, 0)
-                        playerConnection.player.playWhenReady = true
-                    } else {
-                        playerConnection.togglePlayPause()
-                    }
-                }
         ) {
             mediaMetadata?.let { metadata ->
                 val thumbnailUrl = remember(metadata.thumbnailUrl) {
-                    metadata.thumbnailUrl?.resize(120, 120)
+                    metadata.thumbnailUrl?.resize(72, 72)
                 }
                 AsyncImage(
                     model = thumbnailUrl,
@@ -425,24 +421,78 @@ private fun NewMiniPlayerPlayButton(
                     modifier = Modifier.fillMaxSize().clip(CircleShape)
                 )
             }
-
-            // Overlay for paused state
-            if (!effectiveIsPlaying || playbackState == Player.STATE_ENDED) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.4f), CircleShape)
-                )
-                Icon(
-                    painter = painterResource(
-                        if (playbackState == Player.STATE_ENDED) R.drawable.replay else R.drawable.play
-                    ),
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
         }
+    }
+}
+
+
+@Composable
+private fun NewMiniPlayerControlPlayPause(
+    playbackState: Int,
+    isCasting: Boolean,
+    castHandler: CastConnectionHandler?,
+    playerConnection: PlayerConnection
+) {
+    val isPlaying by playerConnection.isPlaying.collectAsState()
+    val castIsPlaying by castHandler?.castIsPlaying?.collectAsState() ?: remember { mutableStateOf(false) }
+    val effectiveIsPlaying = if (isCasting) castIsPlaying else isPlaying
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primary)
+            .clickable {
+                if (isCasting) {
+                    if (castIsPlaying) castHandler?.pause() else castHandler?.play()
+                } else if (playbackState == Player.STATE_ENDED) {
+                    playerConnection.player.seekTo(0, 0)
+                    playerConnection.player.playWhenReady = true
+                } else {
+                    playerConnection.togglePlayPause()
+                }
+            }
+    ) {
+        Icon(
+            painter = painterResource(
+                when {
+                    playbackState == Player.STATE_ENDED -> R.drawable.replay
+                    effectiveIsPlaying -> R.drawable.pause
+                    else -> R.drawable.play
+                }
+            ),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+@Composable
+private fun NewMiniPlayerSkipNext(
+    canSkipNext: Boolean,
+    onSkip: () -> Unit
+) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .border(
+                1.dp,
+                MaterialTheme.colorScheme.outline.copy(alpha = if (canSkipNext) 0.3f else 0.15f),
+                CircleShape
+            )
+            .clickable(enabled = canSkipNext) { onSkip() }
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.skip_next),
+            contentDescription = "Skip Next",
+            tint = MaterialTheme.colorScheme.onSurface.copy(
+                alpha = if (canSkipNext) 0.7f else 0.3f
+            ),
+            modifier = Modifier.size(20.dp)
+        )
     }
 }
 

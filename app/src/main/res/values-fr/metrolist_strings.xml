@@ -152,4 +152,13 @@
     <string name="sensitivity_percentage">%1$d%%</string>
     <string name="subscribe">S\'abonner</string>
     <string name="subscribed">Abonné</string>
+    <!-- App bar Get Plus chip -->
+    <string name="get_plus_chip_label_text">Passez a Plus</string>
+    <string name="get_plus_chip_plus_symbol">+</string>
+
+    <!-- Unlimited downloads banner -->
+    <string name="unlimited_downloads_banner_title">Obtenez des telechargements illimites</string>
+    <string name="unlimited_downloads_banner_subtitle">Profitez d\'une ecoute SANS pub !</string>
+    <string name="unlimited_downloads_banner_unlock">Debloquer</string>
+    <string name="unlimited_downloads_banner_crown_content_description">Icone de couronne premium</string>
 </resources>

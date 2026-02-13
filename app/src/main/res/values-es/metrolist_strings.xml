@@ -151,4 +151,14 @@
     <string name="disable">Desactivar</string>
     <string name="subscribe">Suscribirme</string>
     <string name="subscribed">Suscrito</string>
+
+    <!-- App bar Get Plus chip -->
+    <string name="get_plus_chip_label_text">Obten Plus</string>
+    <string name="get_plus_chip_plus_symbol">+</string>
+
+    <!-- Unlimited downloads banner -->
+    <string name="unlimited_downloads_banner_title">Obten descargas ilimitadas</string>
+    <string name="unlimited_downloads_banner_subtitle">Disfruta musica SIN anuncios!</string>
+    <string name="unlimited_downloads_banner_unlock">Desbloquear</string>
+    <string name="unlimited_downloads_banner_crown_content_description">Icono de corona premium</string>
 </resources>

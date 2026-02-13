@@ -20,9 +20,12 @@ import com.metrolist.music.utils.get
 import com.metrolist.music.utils.reportException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.sync.Mutex
 import java.net.URLDecoder
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 
 @HiltViewModel
@@ -36,10 +39,11 @@ constructor(
     val filter = MutableStateFlow<YouTube.SearchFilter?>(null)
     var summaryPage by mutableStateOf<SearchSummaryPage?>(null)
     val viewStateMap = mutableStateMapOf<String, ItemsPage?>()
+    private val loadMoreMutex = Mutex()
 
     init {
         viewModelScope.launch {
-            filter.collect { filter ->
+            filter.collectLatest { filter ->
                 if (filter == null) {
                     if (summaryPage == null) {
                         YouTube
@@ -82,20 +86,19 @@ constructor(
     }
 
     fun loadMore() {
-        val filter = filter.value?.value
         viewModelScope.launch {
-            if (filter == null) return@launch
-            val viewState = viewStateMap[filter] ?: return@launch
-            val continuation = viewState.continuation
-            if (continuation != null) {
-                val searchResult =
-                    YouTube.searchContinuation(continuation).getOrNull() ?: return@launch
+            val filterValue = filter.value?.value ?: return@launch
+            loadMoreMutex.withLock {
+                val viewState = viewStateMap[filterValue] ?: return@withLock
+                val continuation = viewState.continuation ?: return@withLock
+
+                val searchResult = YouTube.searchContinuation(continuation).getOrNull() ?: return@withLock
                 val hideExplicit = context.dataStore.get(HideExplicitKey, false)
                 val hideVideoSongs = context.dataStore.get(HideVideoSongsKey, false)
                 val newItems = searchResult.items
                     .filterExplicit(hideExplicit)
                     .filterVideoSongs(hideVideoSongs)
-                viewStateMap[filter] = ItemsPage(
+                viewStateMap[filterValue] = ItemsPage(
                     (viewState.items + newItems).distinctBy { it.id },
                     searchResult.continuation
                 )

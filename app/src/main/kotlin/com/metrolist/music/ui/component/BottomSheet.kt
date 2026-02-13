@@ -1,3 +1,8 @@
+/**
+ * Metrolist Project (C) 2026
+ * Licensed under GPL-3.0 | See git history for contributors
+ */
+
 package com.metrolist.music.ui.component
 
 import androidx.activity.compose.BackHandler
@@ -54,6 +59,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.pow
 
+/**
+ * Bottom Sheet
+ * Modified from [ViMusic](https://github.com/vfsfitvnm/ViMusic)
+ */
 @Composable
 fun BottomSheet(
     state: BottomSheetState,
@@ -61,7 +70,6 @@ fun BottomSheet(
     background: @Composable (BoxScope.() -> Unit) = { },
     onDismiss: (() -> Unit)? = null,
     collapsedContent: @Composable BoxScope.() -> Unit,
-    collapsedBackgroundColor: Color = Color.Transparent,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val density = LocalDensity.current
@@ -126,32 +134,19 @@ fun BottomSheet(
             )
         }
 
-        // collapsed content
-        if (!state.isExpanded) {
-            // startY must be < state.collapsedBound
-            val startY = with(density) { (MiniPlayerHeight + MinMiniPlayerHeight - 1.dp).toPx() }
-            val colors = mutableListOf(collapsedBackgroundColor, Color.Transparent)
-            // no visible gradient if no bottom content to hide it
-            if (MiniPlayerHeight + MinMiniPlayerHeight >= state.collapsedBound) {
-                colors[1] = collapsedBackgroundColor
-            }
+        if (!state.isExpanded && (onDismiss == null || !state.isDismissed)) {
             Box(
-                modifier = Modifier
-                    .graphicsLayer {
-                        alpha = 1f - (state.progress * 4).coerceAtMost(1f)
-                    }
-                    .clickable(
-                        onClick = state::expandSoft
-                    )
-                    .fillMaxWidth()
-                    .height(state.collapsedBound)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = colors,
-                            startY = startY,
-                        )
-                    ),
-                content = collapsedContent
+                modifier =
+                    Modifier
+                        .graphicsLayer {
+                            alpha = 1f - (state.progress * 4).coerceAtMost(1f)
+                        }.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = state::expandSoft,
+                        ).fillMaxWidth()
+                        .height(state.collapsedBound),
+                content = collapsedContent,
             )
         }
     }

@@ -5,9 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 
-// inside AdViewModel.kt (example)
 class AdViewModel : ViewModel() {
-    // inside AdViewModel.kt (add these)
     var isAdVisible by mutableStateOf(false)
         private set
 
@@ -30,10 +28,18 @@ class AdViewModel : ViewModel() {
     }
 
     private var lastClosedTime: Long? = null
+
     fun setAdClosedTime(time: Long) {
         lastClosedTime = time
     }
 
     fun getAdClosedTime(): Long? = lastClosedTime
-}
+// added
+    private val _adReloadTick = mutableStateOf(0)
+    val adReloadTick: Int get() = _adReloadTick.value
 
+    fun triggerAdReload() {
+        _adReloadTick.value++
+    }
+
+}

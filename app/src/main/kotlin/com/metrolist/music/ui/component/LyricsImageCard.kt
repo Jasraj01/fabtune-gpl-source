@@ -1,3 +1,8 @@
+/**
+ * Metrolist Project (C) 2026
+ * Licensed under GPL-3.0 | See git history for contributors
+ */
+
 package com.metrolist.music.ui.component
 
 import android.annotation.SuppressLint
@@ -119,7 +124,8 @@ fun LyricsImageCard(
     darkBackground: Boolean = true,
     backgroundColor: Color? = null,
     textColor: Color? = null,
-    secondaryTextColor: Color? = null
+    secondaryTextColor: Color? = null,
+    textAlign: TextAlign = TextAlign.Center
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -209,14 +215,18 @@ fun LyricsImageCard(
                         .weight(1f)
                         .fillMaxWidth()
                         .padding(vertical = 6.dp),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = when (textAlign) {
+                        TextAlign.Left, TextAlign.Start -> Alignment.CenterStart
+                        TextAlign.Right, TextAlign.End -> Alignment.CenterEnd
+                        else -> Alignment.Center
+                    }
                 ) {
                     val availableWidth = maxWidth
                     val availableHeight = maxHeight
                     val textStyle = TextStyle(
                         color = mainTextColor,
                         fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
+                        textAlign = textAlign,
                         letterSpacing = 0.005.em,
                     )
 
@@ -247,7 +257,7 @@ fun LyricsImageCard(
                             lineHeight = dynamicFontSize.value.sp * 1.2f
                         ),
                         overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
+                        textAlign = textAlign,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -264,7 +274,7 @@ fun LyricsImageCard(
                         contentAlignment = Alignment.Center
                     ) {
                         Image(
-                            painter = painterResource(id = R.drawable.ic_small_icon),
+                            painter = painterResource(id = R.drawable.small_icon),
                             contentDescription = null,
                             modifier = Modifier
                                 .size(16.dp),

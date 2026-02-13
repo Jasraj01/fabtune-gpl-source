@@ -15,12 +15,18 @@ import com.metrolist.music.utils.dataStore
 import com.metrolist.music.utils.get
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -38,6 +44,8 @@ constructor(
     init {
         viewModelScope.launch {
             query
+                .debounce(300)
+                .distinctUntilChanged()
                 .flatMapLatest { query ->
                     if (query.isEmpty()) {
                         database.searchHistory().map { history ->
@@ -46,33 +54,40 @@ constructor(
                             )
                         }
                     } else {
-                        val result = YouTube.searchSuggestions(query).getOrNull()
-                        val hideExplicit = context.dataStore.get(HideExplicitKey, false)
-                        val hideVideoSongs = context.dataStore.get(HideVideoSongsKey, false)
-
-                        database
-                            .searchHistory(query)
-                            .map { it.take(3) }
-                            .map { history ->
-                                SearchSuggestionViewState(
-                                    history = history,
-                                    suggestions =
-                                        result
-                                            ?.queries
-                                            ?.filter { suggestionQuery ->
-                                                history.none { it.query == suggestionQuery }
-                                            }.orEmpty(),
-                                    items =
-                                        result
-                                            ?.recommendedItems
-                                            ?.distinctBy { it.id }
-                                            ?.filterExplicit(hideExplicit)
-                                            ?.filterVideoSongs(hideVideoSongs)
-                                            .orEmpty(),
-                                )
+                        flow {
+                            val result = withContext(Dispatchers.IO) {
+                                YouTube.searchSuggestions(query).getOrNull()
                             }
+                            val hideExplicit = context.dataStore.get(HideExplicitKey, false)
+                            val hideVideoSongs = context.dataStore.get(HideVideoSongsKey, false)
+
+                            emitAll(
+                                database
+                                    .searchHistory(query)
+                                    .map { it.take(3) }
+                                    .map { history ->
+                                        SearchSuggestionViewState(
+                                            history = history,
+                                            suggestions =
+                                                result
+                                                    ?.queries
+                                                    ?.filter { suggestionQuery ->
+                                                        history.none { it.query == suggestionQuery }
+                                                    }.orEmpty(),
+                                            items =
+                                                result
+                                                    ?.recommendedItems
+                                                    ?.distinctBy { it.id }
+                                                    ?.filterExplicit(hideExplicit)
+                                                    ?.filterVideoSongs(hideVideoSongs)
+                                                    .orEmpty(),
+                                        )
+                                    }
+                            )
+                        }
                     }
-                }.collect {
+                }
+                .collect {
                     _viewState.value = it
                 }
         }

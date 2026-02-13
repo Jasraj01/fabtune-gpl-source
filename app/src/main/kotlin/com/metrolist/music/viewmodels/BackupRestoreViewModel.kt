@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.metrolist.music.MainActivity
 import com.metrolist.music.R
 import com.metrolist.music.db.InternalDatabase
@@ -21,7 +22,8 @@ import com.metrolist.music.playback.MusicService.Companion.PERSISTENT_QUEUE_FILE
 import com.metrolist.music.utils.reportException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.zip.ZipEntry
@@ -34,84 +36,99 @@ class BackupRestoreViewModel @Inject constructor(
     val database: MusicDatabase,
 ) : ViewModel() {
     fun backup(context: Context, uri: Uri) {
-        runCatching {
-            context.applicationContext.contentResolver.openOutputStream(uri)?.use {
-                it.buffered().zipOutputStream().use { outputStream ->
-                    (context.filesDir / "datastore" / SETTINGS_FILENAME).inputStream().buffered()
-                        .use { inputStream ->
-                            outputStream.putNextEntry(ZipEntry(SETTINGS_FILENAME))
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                context.applicationContext.contentResolver.openOutputStream(uri)?.use {
+                    it.buffered().zipOutputStream().use { outputStream ->
+                        (context.filesDir / "datastore" / SETTINGS_FILENAME).inputStream().buffered()
+                            .use { inputStream ->
+                                outputStream.putNextEntry(ZipEntry(SETTINGS_FILENAME))
+                                inputStream.copyTo(outputStream)
+                            }
+                        // Ensure WAL is checkpointed before copying DB to avoid partial backups.
+                        database.checkpoint()
+                        FileInputStream(database.openHelper.writableDatabase.path).use { inputStream ->
+                            outputStream.putNextEntry(ZipEntry(InternalDatabase.DB_NAME))
                             inputStream.copyTo(outputStream)
                         }
-                    runBlocking(Dispatchers.IO) {
-                        database.checkpoint()
-                    }
-                    FileInputStream(database.openHelper.writableDatabase.path).use { inputStream ->
-                        outputStream.putNextEntry(ZipEntry(InternalDatabase.DB_NAME))
-                        inputStream.copyTo(outputStream)
                     }
                 }
+            }.onSuccess {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, R.string.backup_create_success, Toast.LENGTH_SHORT).show()
+                }
+            }.onFailure {
+                reportException(it)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, R.string.backup_create_failed, Toast.LENGTH_SHORT).show()
+                }
             }
-        }.onSuccess {
-            Toast.makeText(context, R.string.backup_create_success, Toast.LENGTH_SHORT).show()
-        }.onFailure {
-            reportException(it)
-            Toast.makeText(context, R.string.backup_create_failed, Toast.LENGTH_SHORT).show()
         }
     }
 
     fun restore(context: Context, uri: Uri) {
-        runCatching {
-            Timber.tag("RESTORE").i("Starting restore from URI: $uri")
-            context.applicationContext.contentResolver.openInputStream(uri)?.use { raw ->
-                raw.zipInputStream().use { inputStream ->
-                    var entry = tryOrNull { inputStream.nextEntry } // prevent ZipException
-                    var foundAny = false
-                    while (entry != null) {
-                        Timber.tag("RESTORE").i("Found zip entry: ${entry.name}")
-                        when (entry.name) {
-                            SETTINGS_FILENAME -> {
-                                Timber.tag("RESTORE").i("Restoring settings to datastore")
-                                foundAny = true
-                                (context.filesDir / "datastore" / SETTINGS_FILENAME).outputStream()
-                                    .use { outputStream ->
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                Timber.tag("RESTORE").i("Starting restore from URI: $uri")
+                context.applicationContext.contentResolver.openInputStream(uri)?.use { raw ->
+                    raw.zipInputStream().use { inputStream ->
+                        var entry = tryOrNull { inputStream.nextEntry } // prevent ZipException
+                        var foundAny = false
+                        while (entry != null) {
+                            Timber.tag("RESTORE").i("Found zip entry: ${entry.name}")
+                            when (entry.name) {
+                                SETTINGS_FILENAME -> {
+                                    Timber.tag("RESTORE").i("Restoring settings to datastore")
+                                    foundAny = true
+                                    (context.filesDir / "datastore" / SETTINGS_FILENAME).outputStream()
+                                        .use { outputStream ->
+                                            inputStream.copyTo(outputStream)
+                                        }
+                                }
+                                InternalDatabase.DB_NAME -> {
+                                    Timber.tag("RESTORE").i("Restoring DB (entry = ${entry.name})")
+                                    foundAny = true
+                                    // capture path before closing DB to avoid reopening race
+                                    val dbPath = database.openHelper.writableDatabase.path
+                                    database.checkpoint()
+                                    database.close()
+                                    Timber.tag("RESTORE").i("Overwriting DB at path: $dbPath")
+                                    FileOutputStream(dbPath).use { outputStream ->
                                         inputStream.copyTo(outputStream)
                                     }
-                            }
-                            InternalDatabase.DB_NAME -> {
-                                Timber.tag("RESTORE").i("Restoring DB (entry = ${entry.name})")
-                                foundAny = true
-                                // capture path before closing DB to avoid reopening race
-                                val dbPath = database.openHelper.writableDatabase.path
-                                runBlocking(Dispatchers.IO) { database.checkpoint() }
-                                database.close()
-                                Timber.tag("RESTORE").i("Overwriting DB at path: $dbPath")
-                                FileOutputStream(dbPath).use { outputStream ->
-                                    inputStream.copyTo(outputStream)
+                                    Timber.tag("RESTORE").i("DB overwrite complete")
                                 }
-                                Timber.tag("RESTORE").i("DB overwrite complete")
+                                else -> {
+                                    Timber.tag("RESTORE").i("Skipping unexpected entry: ${entry.name}")
+                                }
                             }
-                            else -> {
-                                Timber.tag("RESTORE").i("Skipping unexpected entry: ${entry.name}")
-                            }
+                            entry = tryOrNull { inputStream.nextEntry } // prevent ZipException
                         }
-                        entry = tryOrNull { inputStream.nextEntry } // prevent ZipException
+                        if (!foundAny) {
+                            Timber.tag("RESTORE").w("No expected entries found in archive")
+                        }
                     }
-                    if (!foundAny) {
-                        Timber.tag("RESTORE").w("No expected entries found in archive")
-                    }
+                } ?: run {
+                    Timber.tag("RESTORE").e("Could not open input stream for uri: $uri")
                 }
-            } ?: run {
-                Timber.tag("RESTORE").e("Could not open input stream for uri: $uri")
-            }
 
-            context.stopService(Intent(context, MusicService::class.java))
-            context.filesDir.resolve(PERSISTENT_QUEUE_FILE).delete()
-            context.startActivity(Intent(context, MainActivity::class.java))
-            exitProcess(0)
-        }.onFailure {
-            reportException(it)
-            Timber.tag("RESTORE").e(it, "Restore failed")
-            Toast.makeText(context, R.string.restore_failed, Toast.LENGTH_SHORT).show()
+                context.stopService(Intent(context, MusicService::class.java))
+                context.filesDir.resolve(PERSISTENT_QUEUE_FILE).delete()
+                withContext(Dispatchers.Main) {
+                    context.startActivity(
+                        Intent(context, MainActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                        }
+                    )
+                }
+                exitProcess(0)
+            }.onFailure {
+                reportException(it)
+                Timber.tag("RESTORE").e(it, "Restore failed")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, R.string.restore_failed, Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 

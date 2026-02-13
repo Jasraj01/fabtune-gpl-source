@@ -1,12 +1,20 @@
+/**
+ * Metrolist Project (C) 2026
+ * Licensed under GPL-3.0 | See git history for contributors
+ *
+ * Material 3 Expressive Volume Slider
+ * Based on M3 Expressive Slider specifications (Size M):
+ * - Track height: 40dp
+ * - Handle height: 52dp
+ * - Handle width: 4dp
+ * - Track corner radius: 12dp
+ * - Inset icon size: 24dp
+ */
+
 package com.metrolist.music.ui.component
 
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.height
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.automirrored.filled.VolumeOff
-import androidx.compose.material.icons.automirrored.filled.VolumeMute
-import androidx.compose.material.icons.automirrored.filled.VolumeDown
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
@@ -16,16 +24,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.translate
-import androidx.compose.ui.graphics.vector.VectorPainter
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import com.metrolist.music.R
 
 /**
  * Material 3 Expressive Volume Slider dimensions (Size M)
@@ -53,10 +61,10 @@ fun VolumeSlider(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
 
-    val volumeOffIcon = rememberVectorPainter(Icons.AutoMirrored.Filled.VolumeOff)
-    val volumeMuteIcon = rememberVectorPainter(Icons.AutoMirrored.Filled.VolumeMute)
-    val volumeDownIcon = rememberVectorPainter(Icons.AutoMirrored.Filled.VolumeDown)
-    val volumeUpIcon = rememberVectorPainter(Icons.AutoMirrored.Filled.VolumeUp)
+    val volumeOffIcon = painterResource(R.drawable.volume_off)
+    val volumeMuteIcon = painterResource(R.drawable.volume_mute)
+    val volumeDownIcon = painterResource(R.drawable.volume_down)
+    val volumeUpIcon = painterResource(R.drawable.volume_up)
 
     val currentIcon = when {
         value <= 0f -> volumeOffIcon
@@ -120,20 +128,20 @@ fun VolumeSlider(
                 enabled = enabled,
                 thumbTrackGapSize = VolumeSliderDefaults.ThumbTrackGapSize,
                 trackCornerSize = VolumeSliderDefaults.TrackCornerRadius,
-                drawStopIndicator = { offset ->
+                drawStopIndicator = if (value < 0.90f) { offset ->
                     drawCircle(
                         color = stopIndicatorColor,
                         radius = VolumeSliderDefaults.StopIndicatorRadius.toPx(),
                         center = offset
                     )
-                }
+                } else null
             )
         }
     )
 }
 
 private fun DrawScope.drawVolumeIcon(
-    icon: VectorPainter,
+    icon: Painter,
     iconSize: DpSize,
     iconPadding: Dp,
     yOffset: Float,
@@ -142,7 +150,7 @@ private fun DrawScope.drawVolumeIcon(
     inactiveTrackWidth: Float,
     activeIconColor: Color,
     inactiveIconColor: Color,
-    volumeOffIcon: VectorPainter
+    volumeOffIcon: Painter
 ) {
     val iconSizePx = iconSize.toSize()
     val iconPaddingPx = iconPadding.toPx()

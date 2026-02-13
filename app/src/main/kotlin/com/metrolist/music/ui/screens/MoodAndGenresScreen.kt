@@ -32,7 +32,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -42,12 +41,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavController
-import coil3.compose.AsyncImage
-import coil3.imageLoader
 import com.metrolist.music.LocalPlayerAwareWindowInsets
 import com.metrolist.music.R
 import com.metrolist.music.ui.component.IconButton
 import com.metrolist.music.ui.component.NavigationTitle
+import com.metrolist.music.ui.component.image.ProgressiveImageModel
+import com.metrolist.music.ui.component.image.ProgressiveNetworkImage
 import com.metrolist.music.ui.component.shimmer.ListItemPlaceHolder
 import com.metrolist.music.ui.component.shimmer.ShimmerHost
 import com.metrolist.music.ui.utils.backToMain
@@ -231,14 +230,19 @@ fun MoodAndGenresButton(
                             .size(height * 0.73f)
                             .clip(RoundedCornerShape(6.dp))
                     ) {
-                        val context = LocalContext.current
-                        AsyncImage(
-                            model = thumbnailUrl,
+                        ProgressiveNetworkImage(
+                            model = ProgressiveImageModel(
+                                stableKey = "mood_button_${title}_${thumbnailUrl}",
+                                url = thumbnailUrl,
+                            ),
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
-                            placeholder = painterResource(id = R.drawable.album_search),
+                            placeholderResId = R.drawable.album_search,
+                            errorResId = R.drawable.album_search,
+                            fallbackResId = R.drawable.album_search,
+                            thumbnailSizePx = 96,
+                            mediumSizePx = 200,
                             modifier = Modifier.fillMaxSize(),
-                            imageLoader = context.imageLoader
                         )
                     }
                 }

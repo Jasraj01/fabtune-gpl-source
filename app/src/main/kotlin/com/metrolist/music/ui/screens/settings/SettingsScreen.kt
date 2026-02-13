@@ -50,7 +50,6 @@ import com.metrolist.music.ui.component.IconButton
 import com.metrolist.music.ui.component.Material3SettingsGroup
 import com.metrolist.music.ui.component.Material3SettingsItem
 import com.metrolist.music.ui.component.ReleaseNotesCard
-import com.metrolist.music.ui.screens.PromoBanner
 import com.metrolist.music.ui.utils.backToMain
 import com.metrolist.music.utils.Updater
 import com.revenuecat.purchases.Purchases
@@ -279,17 +278,26 @@ fun SettingsScreen(
                         }
                     )
                 )
+//                add(
+//                    Material3SettingsItem(
+//                        icon = painterResource(R.drawable.info),
+//                        title = { Text(stringResource(R.string.faq)) },
+//                        onClick = {
+//                            // Build and launch an ACTION_VIEW intent for your FAQ URL
+//                            val intent = Intent(Intent.ACTION_VIEW).apply {
+//                                data =
+//                                    Uri.parse("https://fabtune-music.blogspot.com/p/faqs.html")
+//                            }
+//                            context.startActivity(intent)
+//                        }
+//                    )
+//                )
                 add(
                     Material3SettingsItem(
                         icon = painterResource(R.drawable.info),
-                        title = { Text(stringResource(R.string.faq)) },
+                        title = { Text("About") },
                         onClick = {
-                            // Build and launch an ACTION_VIEW intent for your FAQ URL
-                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                data =
-                                    Uri.parse("https://fabtune-music.blogspot.com/p/faqs.html")
-                            }
-                            context.startActivity(intent)
+                            navController.navigate("about_screen")
                         }
                     )
                 )

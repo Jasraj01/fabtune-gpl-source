@@ -76,7 +76,7 @@ fun StorageSettings(
     val imageCacheString = stringResource(R.string.image_cache).lowercase()
     val (maxImageCacheSize, onMaxImageCacheSizeChange) = rememberPreference(
         key = MaxImageCacheSizeKey,
-        defaultValue = 512
+        defaultValue = 250
     )
     val (maxSongCacheSize, onMaxSongCacheSizeChange) = rememberPreference(
         key = MaxSongCacheSizeKey,
@@ -372,7 +372,7 @@ fun StorageSettings(
                         title = { Text(stringResource(R.string.max_image_cache_size)) },
                         description = {
                             val imageCacheValues =
-                                remember { listOf(0, 128, 256, 512, 1024, 2048, 4096, 8192) }
+                                remember { listOf(0, 128, 250, 256, 512, 1024, 2048, 4096, 8192) }
                             Column {
                                 Text(
                                     text = when (maxImageCacheSize) {

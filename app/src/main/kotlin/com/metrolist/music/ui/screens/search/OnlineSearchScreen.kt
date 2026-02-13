@@ -24,6 +24,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.metrolist.innertube.models.*
 import com.metrolist.music.LocalDatabase
@@ -37,8 +38,7 @@ import com.metrolist.music.ui.component.YouTubeListItem
 import com.metrolist.music.ui.menu.*
 import com.metrolist.music.viewmodels.OnlineSearchSuggestionViewModel
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Color
@@ -60,28 +60,28 @@ fun OnlineSearchScreen(
     val playerConnection = LocalPlayerConnection.current ?: return
 
     val scope = rememberCoroutineScope()
+    val latestOnDismiss = rememberUpdatedState(onDismiss)
 
     val haptic = LocalHapticFeedback.current
-    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsStateWithLifecycle()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
     val coroutineScope = rememberCoroutineScope()
-    val viewState by viewModel.viewState.collectAsState()
+    val viewState by viewModel.viewState.collectAsStateWithLifecycle()
 
     val lazyListState = rememberLazyListState()
 
     LaunchedEffect(Unit) {
         snapshotFlow { lazyListState.firstVisibleItemScrollOffset }
             .drop(1)
+            .distinctUntilChanged()
             .collect {
                 keyboardController?.hide()
             }
     }
 
     LaunchedEffect(query) {
-        snapshotFlow { query }.debounce(300L).collectLatest {
-            viewModel.query.value = it
-        }
+        viewModel.query.value = query
     }
 
     LazyColumn(
@@ -91,13 +91,17 @@ fun OnlineSearchScreen(
             .fillMaxSize()
             .background(if (pureBlack) Color.Black else MaterialTheme.colorScheme.background)
     ) {
-        items(viewState.history, key = { "history_${it.query}" }) { history ->
+        items(
+            items = viewState.history,
+            key = { "history_${it.query}" },
+            contentType = { "history" },
+        ) { history ->
             SuggestionItem(
                 query = history.query,
                 online = false,
                 onClick = {
                     onSearch(history.query)
-                    onDismiss()
+                    latestOnDismiss.value()
                 },
                 onDelete = {
                     database.query {
@@ -112,13 +116,17 @@ fun OnlineSearchScreen(
             )
         }
 
-        items(viewState.suggestions, key = { "suggestion_$it" }) { query ->
+        items(
+            items = viewState.suggestions,
+            key = { "suggestion_$it" },
+            contentType = { "suggestion" },
+        ) { query ->
             SuggestionItem(
                 query = query,
                 online = true,
                 onClick = {
                     onSearch(query)
-                    onDismiss()
+                    latestOnDismiss.value()
                 },
                 onFillTextField = {
                     onQueryChange(TextFieldValue(query, TextRange(query.length)))
@@ -129,17 +137,28 @@ fun OnlineSearchScreen(
         }
 
         if (viewState.items.isNotEmpty() && viewState.history.size + viewState.suggestions.size > 0) {
-            item(key = "search_divider") {
+            item(key = "search_divider", contentType = "divider") {
                 HorizontalDivider(
                     modifier = Modifier.animateItem()
                 )
             }
-            item(key = "search_divider_spacer") {
+            item(key = "search_divider_spacer", contentType = "spacer") {
                 Spacer(modifier = Modifier.height(8.dp))
             }
         }
 
-        items(viewState.items, key = { "item_${it.id}" }) { item ->
+        items(
+            items = viewState.items,
+            key = { "item_${it.id}" },
+            contentType = { item ->
+                when (item) {
+                    is SongItem -> "song"
+                    is AlbumItem -> "album"
+                    is ArtistItem -> "artist"
+                    is PlaylistItem -> "playlist"
+                }
+            },
+        ) { item ->
             YouTubeListItem(
                 item = item,
                 isActive = when (item) {
@@ -158,7 +177,7 @@ fun OnlineSearchScreen(
                                         navController = navController,
                                         onDismiss = {
                                             menuState.dismiss()
-                                            onDismiss()
+                                            latestOnDismiss.value()
                                         }
                                     )
                                     is AlbumItem -> YouTubeAlbumMenu(
@@ -166,14 +185,14 @@ fun OnlineSearchScreen(
                                         navController = navController,
                                         onDismiss = {
                                             menuState.dismiss()
-                                            onDismiss()
+                                            latestOnDismiss.value()
                                         }
                                     )
                                     is ArtistItem -> YouTubeArtistMenu(
                                         artist = item,
                                         onDismiss = {
                                             menuState.dismiss()
-                                            onDismiss()
+                                            latestOnDismiss.value()
                                         }
                                     )
                                     is PlaylistItem -> YouTubePlaylistMenu(
@@ -181,7 +200,7 @@ fun OnlineSearchScreen(
                                         coroutineScope = scope,
                                         onDismiss = {
                                             menuState.dismiss()
-                                            onDismiss()
+                                            latestOnDismiss.value()
                                         }
                                     )
                                 }
@@ -205,20 +224,20 @@ fun OnlineSearchScreen(
                                         playerConnection.playQueue(
                                             YouTubeQueue.radio(item.toMediaMetadata())
                                         )
-                                        onDismiss()
+                                        latestOnDismiss.value()
                                     }
                                 }
                                 is AlbumItem -> {
                                     navController.navigate("album/${item.id}")
-                                    onDismiss()
+                                    latestOnDismiss.value()
                                 }
                                 is ArtistItem -> {
                                     navController.navigate("artist/${item.id}")
-                                    onDismiss()
+                                    latestOnDismiss.value()
                                 }
                                 is PlaylistItem -> {
                                     navController.navigate("online_playlist/${item.id}")
-                                    onDismiss()
+                                    latestOnDismiss.value()
                                 }
                             }
                         },
@@ -231,7 +250,7 @@ fun OnlineSearchScreen(
                                         navController = navController,
                                         onDismiss = {
                                             menuState.dismiss()
-                                            onDismiss()
+                                            latestOnDismiss.value()
                                         }
                                     )
                                     is AlbumItem -> YouTubeAlbumMenu(
@@ -239,14 +258,14 @@ fun OnlineSearchScreen(
                                         navController = navController,
                                         onDismiss = {
                                             menuState.dismiss()
-                                            onDismiss()
+                                            latestOnDismiss.value()
                                         }
                                     )
                                     is ArtistItem -> YouTubeArtistMenu(
                                         artist = item,
                                         onDismiss = {
                                             menuState.dismiss()
-                                            onDismiss()
+                                            latestOnDismiss.value()
                                         }
                                     )
                                     is PlaylistItem -> YouTubePlaylistMenu(
@@ -254,7 +273,7 @@ fun OnlineSearchScreen(
                                         coroutineScope = coroutineScope,
                                         onDismiss = {
                                             menuState.dismiss()
-                                            onDismiss()
+                                            latestOnDismiss.value()
                                         }
                                     )
                                 }

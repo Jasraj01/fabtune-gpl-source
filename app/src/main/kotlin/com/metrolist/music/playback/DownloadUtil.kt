@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.*
 import okhttp3.OkHttpClient
 import java.time.LocalDateTime
 import java.util.concurrent.Executor
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -43,7 +44,7 @@ constructor(
 ) {
     private val connectivityManager = context.getSystemService<ConnectivityManager>()!!
     private val audioQuality by enumPreference(context, AudioQualityKey, AudioQuality.AUTO)
-    private val songUrlCache = HashMap<String, Pair<String, Long>>()
+    private val songUrlCache = ConcurrentHashMap<String, Pair<String, Long>>()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -76,15 +77,19 @@ constructor(
                 return@Factory dataSpec
             }
 
-            songUrlCache[mediaId]?.takeIf { it.second < System.currentTimeMillis() }?.let {
+            songUrlCache[mediaId]?.takeIf { it.second > System.currentTimeMillis() }?.let {
                 return@Factory dataSpec.withUri(it.first.toUri())
             }
 
             val playbackData = runBlocking(Dispatchers.IO) {
-                YTPlayerUtils.playerResponseForPlayback(
-                    mediaId,
-                    audioQuality = audioQuality,
-                    connectivityManager = connectivityManager,
+                withTimeoutOrNull(15_000L) {
+                    YTPlayerUtils.playerResponseForPlayback(
+                        mediaId,
+                        audioQuality = audioQuality,
+                        connectivityManager = connectivityManager,
+                    )
+                } ?: Result.failure(
+                    java.net.SocketTimeoutException("Timed out fetching playback data for download")
                 )
             }.getOrThrow()
             val format = playbackData.format
@@ -95,8 +100,8 @@ constructor(
                     FormatEntity(
                         id = mediaId,
                         itag = format.itag,
-                        mimeType = format.mimeType.split(";")[0],
-                        codecs = format.mimeType.split("codecs=")[1].removeSurrounding("\""),
+                        mimeType = format.mimeType.substringBefore(";"),
+                        codecs = format.mimeType.substringAfter("codecs=", "").removeSurrounding("\""),
                         bitrate = format.bitrate,
                         sampleRate = format.audioSampleRate,
                         contentLength = formatContentLength,
@@ -128,7 +133,8 @@ constructor(
                 "${it}&range=0-$rangeLength"
             }
 
-            songUrlCache[mediaId] = streamUrl to playbackData.streamExpiresInSeconds * 1000L
+            songUrlCache[mediaId] =
+                streamUrl to (System.currentTimeMillis() + playbackData.streamExpiresInSeconds * 1000L)
             dataSpec.withUri(streamUrl.toUri())
         }
 

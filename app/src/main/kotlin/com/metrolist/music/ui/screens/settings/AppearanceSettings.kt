@@ -11,10 +11,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import com.metrolist.music.ui.theme.PlayerSliderColors
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import com.metrolist.music.ui.component.SquigglySlider
 import androidx.compose.foundation.layout.windowInsetsPadding
 import com.metrolist.music.constants.SquigglySliderKey
 import androidx.compose.foundation.rememberScrollState
@@ -612,11 +615,16 @@ fun AppearanceSettings(
                 showSliderOptionDialog = false
             }
         ) {
+            val sliderPreviewColors = PlayerSliderColors.getSliderColors(
+                MaterialTheme.colorScheme.primary,
+                PlayerBackgroundStyle.DEFAULT,
+                isSystemInDarkTheme()
+            )
             Column(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -627,24 +635,23 @@ fun AppearanceSettings(
                             .clip(RoundedCornerShape(16.dp))
                             .border(
                                 1.dp,
-                                if (sliderStyle == SliderStyle.DEFAULT) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                if (sliderStyle == SliderStyle.DEFAULT && !squigglySlider) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
                                 RoundedCornerShape(16.dp)
                             )
                             .clickable {
                                 onSliderStyleChange(SliderStyle.DEFAULT)
+                                onSquigglySliderChange(false)
                                 showSliderOptionDialog = false
                             }
-                            .padding(16.dp)
+                            .padding(12.dp)
                     ) {
-                        var sliderValue by remember {
-                            mutableFloatStateOf(0.5f)
-                        }
+                        val sliderValue = 0.35f
                         Slider(
                             value = sliderValue,
                             valueRange = 0f..1f,
-                            onValueChange = {
-                                sliderValue = it
-                            },
+                            onValueChange = { /* preview only */ },
+                            colors = sliderPreviewColors,
+                            enabled = false,
                             modifier = Modifier.weight(1f)
                         )
                         Text(
@@ -664,26 +671,25 @@ fun AppearanceSettings(
                             .clip(RoundedCornerShape(16.dp))
                             .border(
                                 1.dp,
-                                if (sliderStyle == SliderStyle.WAVY) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                if (sliderStyle == SliderStyle.WAVY && !squigglySlider) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
                                 RoundedCornerShape(16.dp)
                             )
                             .clickable {
                                 onSliderStyleChange(SliderStyle.WAVY)
+                                onSquigglySliderChange(false)
                                 showSliderOptionDialog = false
                             }
-                            .padding(16.dp)
+                            .padding(12.dp)
                     ) {
-                        var sliderValue by remember {
-                            mutableFloatStateOf(0.5f)
-                        }
+                        val sliderValue = 0.5f
                         WavySlider(
                             value = sliderValue,
                             valueRange = 0f..1f,
-                            onValueChange = {
-                                sliderValue = it
-                            },
+                            onValueChange = { /* preview only */ },
+                            colors = sliderPreviewColors,
                             modifier = Modifier.weight(1f),
-                            isPlaying = true
+                            isPlaying = true,
+                            enabled = false
                         )
                         Text(
                             text = stringResource(R.string.wavy),
@@ -692,6 +698,10 @@ fun AppearanceSettings(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -706,33 +716,26 @@ fun AppearanceSettings(
                             )
                             .clickable {
                                 onSliderStyleChange(SliderStyle.SLIM)
+                                onSquigglySliderChange(false)
                                 showSliderOptionDialog = false
                             }
-                            .padding(16.dp)
+                            .padding(12.dp)
                     ) {
-                        var sliderValue by remember {
-                            mutableFloatStateOf(0.5f)
-                        }
+                        val sliderValue = 0.65f
                         Slider(
                             value = sliderValue,
                             valueRange = 0f..1f,
-                            onValueChange = {
-                                sliderValue = it
-                            },
+                            onValueChange = { /* preview only */ },
                             thumb = { Spacer(modifier = Modifier.size(0.dp)) },
                             track = { sliderState ->
                                 PlayerSliderTrack(
                                     sliderState = sliderState,
-                                    colors = SliderDefaults.colors()
+                                    colors = sliderPreviewColors
                                 )
                             },
-                            modifier = Modifier
-                                .weight(1f)
-                                .pointerInput(Unit) {
-                                    detectTapGestures(
-                                        onPress = {}
-                                    )
-                                }
+                            colors = sliderPreviewColors,
+                            enabled = false,
+                            modifier = Modifier.weight(1f)
                         )
 
                         Text(
@@ -742,37 +745,40 @@ fun AppearanceSettings(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                }
-
-                // Squiggly slider option - only visible when WAVY is selected
-                AnimatedVisibility(visible = sliderStyle == SliderStyle.WAVY) {
-                    Row(
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { onSquigglySliderChange(!squigglySlider) }
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = stringResource(R.string.enable_squiggly_slider),
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Switch(
-                            checked = squigglySlider,
-                            onCheckedChange = onSquigglySliderChange,
-                            thumbContent = {
-                                Icon(
-                                    painter = painterResource(
-                                        id = if (squigglySlider) R.drawable.check else R.drawable.close
-                                    ),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(SwitchDefaults.IconSize)
-                                )
+                            .aspectRatio(1f)
+                            .weight(1f)
+                            .clip(RoundedCornerShape(16.dp))
+                            .border(
+                                1.dp,
+                                if (sliderStyle == SliderStyle.WAVY && squigglySlider) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                RoundedCornerShape(16.dp)
+                            )
+                            .clickable {
+                                onSliderStyleChange(SliderStyle.WAVY)
+                                onSquigglySliderChange(true)
+                                showSliderOptionDialog = false
                             }
+                            .padding(12.dp)
+                    ) {
+                        val sliderValue = 0.5f
+                        SquigglySlider(
+                            value = sliderValue,
+                            valueRange = 0f..1f,
+                            onValueChange = { /* preview only */ },
+                            modifier = Modifier.weight(1f),
+                            enabled = false,
+                            colors = sliderPreviewColors,
+                            isPlaying = true,
+                        )
+                        Text(
+                            text = stringResource(R.string.squiggly),
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }

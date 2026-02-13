@@ -1,0 +1,5 @@
+HSPLcom/metrolist/music/App;->onCreate()V
+HSPLcom/metrolist/music/MainActivity;->onCreate(Landroid/os/Bundle;)V
+HSPLcom/metrolist/music/MainActivity;->onStart()V
+HSPLcom/metrolist/music/MainActivity;->onStop()V
+HSPLcom/metrolist/music/MainActivity;->handleDeepLinkIntent(Landroid/content/Intent;Landroidx/navigation/NavHostController;)V

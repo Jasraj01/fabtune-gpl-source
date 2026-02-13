@@ -1,3 +1,8 @@
+/**
+ * Metrolist Project (C) 2026
+ * Licensed under GPL-3.0 | See git history for contributors
+ */
+
 package com.metrolist.music.ui.component
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -40,6 +45,7 @@ fun WavySlider(
     onValueChangeFinished: (() -> Unit)? = null,
     colors: SliderColors = SliderDefaults.colors(),
     isPlaying: Boolean = true,
+    enabled: Boolean = true,
     strokeWidth: Dp = 4.dp,
     thumbRadius: Dp = 8.dp,
     wavelength: Dp = WavyProgressIndicatorDefaults.LinearDeterminateWavelength,
@@ -73,10 +79,12 @@ fun WavySlider(
     // Calculate container height to accommodate thumb
     val containerHeight = maxOf(WavyProgressIndicatorDefaults.LinearContainerHeight, thumbRadius * 2)
 
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(containerHeight)
+    val baseModifier = modifier
+        .fillMaxWidth()
+        .height(containerHeight)
+
+    val interactiveModifier = if (enabled) {
+        baseModifier
             .pointerInput(valueRange) {
                 detectTapGestures { offset ->
                     val newValue = (offset.x / size.width).coerceIn(0f, 1f)
@@ -106,7 +114,13 @@ fun WavySlider(
                         onValueChange(mappedValue)
                     }
                 )
-            },
+            }
+    } else {
+        baseModifier
+    }
+
+    Box(
+        modifier = interactiveModifier,
         contentAlignment = Alignment.Center
     ) {
         LinearWavyProgressIndicator(
@@ -123,7 +137,7 @@ fun WavySlider(
             waveSpeed = waveSpeed
         )
 
-        // Draw circular thumb
+        // Draw circular thumb - synced with progress indicator position
         Canvas(modifier = Modifier.fillMaxSize()) {
             val thumbX = size.width * displayValue
             val thumbY = size.height / 2

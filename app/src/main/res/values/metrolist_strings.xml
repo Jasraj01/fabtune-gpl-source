@@ -107,6 +107,10 @@
     <string name="seek_forward_dynamic">+%1$d seconds forwards</string>
     <string name="seek_backward_dynamic">-%1$d seconds backwards</string>
 
+    <string name="seek_forward">Forward</string>
+    <string name="seek_backward">Rewind</string>
+
+
     <string name="similar_content">Similar content</string>
     <string name="error_playing">Error playing</string>
 
@@ -182,6 +186,8 @@
     <string name="audio_quality_max">Max (beta)</string>
     <string name="enable_similar_content">Enable similar content</string>
     <string name="similar_content_desc">Automatically add more similar songs when the end of the queue is reached</string>
+    <string name="persistent_shuffle_title">Persistent shuffle</string>
+    <string name="persistent_shuffle_desc">Keep shuffle enabled when starting new songs or playlists</string>
     <string name="remember_shuffle_and_repeat">Remember shuffle and repeat</string>
     <string name="remember_shuffle_and_repeat_desc">Remember shuffle and repeat mode when restarting the app</string>
     <string name="min_playback_duration_title">Minimum playback duration</string>
@@ -373,7 +379,17 @@
     <string name="error_file_read">Could not read file</string>
     <string name="error_file_open">Failed to open file: %1$s</string>
     <string name="import_error_title">Import Error</string>
+    <string name="error_title">Error</string>
+    <string name="error_eq_apply_failed">Failed to apply EQ profile: %1$s</string>
 
+    <!-- Crash Handler -->
+    <string name="crash_title">App Crashed</string>
+    <string name="crash_description">An unexpected error occurred. Please share the crash report to help us fix the issue.</string>
+    <string name="crash_share_logs">Share Logs</string>
+    <string name="crash_share_title">Share crash report</string>
+    <string name="crash_report_subject">FabTune Crash Report</string>
+    <string name="crash_close">Close</string>
+    <string name="crash_no_log">No crash log available</string>
 
     <!--Premium Content-->
     <string name="upgrade">Upgrade</string>
@@ -433,7 +449,21 @@
     <string name="play_pause">Play/Pause</string>
     <string name="next">Next</string>
     <string name="like">Like</string>
+    <string name="not_playing">No song playing</string>
+    <string name="tap_to_play">Tap to open FabTune</string>
     <string name="widget_description">Music player widget with playback controls</string>
-    <string name="turntable_widget_description">Quick access to your most recently played track</string>
     <string name="queue_widget_description">Music player with queue preview</string>
+    <string name="turntable_widget_description">Circular music widget with play and like controls</string>
+    <string name="widget_music_player">Music Player</string>
+    <string name="widget_turntable">Turntable</string>
+
+    <!-- App bar Get Plus chip -->
+    <string name="get_plus_chip_label_text">Get Plus</string>
+    <string name="get_plus_chip_plus_symbol">+</string>
+
+    <!-- Unlimited downloads banner -->
+    <string name="unlimited_downloads_banner_title">Get Unlimited Downloads</string>
+    <string name="unlimited_downloads_banner_subtitle">Enjoy Ad-FREE listening!</string>
+    <string name="unlimited_downloads_banner_unlock">Unlock</string>
+    <string name="unlimited_downloads_banner_crown_content_description">Premium crown icon</string>
 </resources>

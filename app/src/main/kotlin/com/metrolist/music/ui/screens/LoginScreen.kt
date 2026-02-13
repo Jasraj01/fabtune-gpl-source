@@ -34,12 +34,10 @@ import com.metrolist.music.utils.rememberPreference
 import com.metrolist.music.utils.reportException
 import com.metrolist.innertube.YouTube
 import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.DelicateCoroutinesApi
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 
 @SuppressLint("SetJavaScriptEnabled")
-@OptIn(ExperimentalMaterial3Api::class, DelicateCoroutinesApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(
     navController: NavController,

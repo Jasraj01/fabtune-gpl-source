@@ -52,9 +52,7 @@ import com.metrolist.music.ui.utils.resize
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.launch
 import java.text.Collator
 import java.time.LocalDateTime
@@ -500,6 +498,8 @@ interface DatabaseDao {
     fun getPlayCountByYear(songId: String?, year: Int): Flow<Int>
     @Query("SELECT count from playCount WHERE song = :songId AND year = :year AND month = :month")
     fun getPlayCountByMonth(songId: String?, year: Int, month: Int): Flow<Int>
+    @Query("SELECT count from playCount WHERE song = :songId AND year = :year AND month = :month")
+    fun getPlayCountByMonthSync(songId: String?, year: Int, month: Int): Int?
 
     @Transaction
     @Query(
@@ -925,15 +925,33 @@ interface DatabaseDao {
 
     @Transaction
     fun addSongToPlaylist(playlist: Playlist, songIds: List<String>) {
+        // CRASH FIX – foreign key safety
+        insert(playlist.playlist)
+
+        val validSongIds = songIds.filter { id ->
+            getSongByIdBlocking(id) != null
+        }
+
+        if (validSongIds.isEmpty()) return
+
         var position = playlist.songCount
-        songIds.forEach { id ->
-            insert(
-                PlaylistSongMap(
-                    songId = id,
-                    playlistId = playlist.id,
-                    position = position++
+        validSongIds.forEach { id ->
+            try {
+                // CRASH SHIELD – defensive FK catch
+                insert(
+                    PlaylistSongMap(
+                        songId = id,
+                        playlistId = playlist.id,
+                        position = position++,
+                    ),
                 )
-            )
+            } catch (e: android.database.sqlite.SQLiteConstraintException) {
+                android.util.Log.w(
+                    "DatabaseDao",
+                    "addSongToPlaylist: foreign key constraint for playlistId=${playlist.id}, songId=$id",
+                    e,
+                )
+            }
         }
     }
 
@@ -1004,10 +1022,8 @@ interface DatabaseDao {
      */
     fun incrementPlayCount(songId: String) {
         val time = LocalDateTime.now().atOffset(ZoneOffset.UTC)
-        var oldCount: Int
-        runBlocking {
-            oldCount = getPlayCountByMonth(songId, time.year, time.monthValue).first()
-        }
+        // Use sync Room query inside DAO default method to avoid nested coroutine blocking.
+        val oldCount = getPlayCountByMonthSync(songId, time.year, time.monthValue) ?: 0
 
         // add new
         if (oldCount <= 0) {

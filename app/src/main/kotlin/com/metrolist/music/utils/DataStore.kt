@@ -12,28 +12,87 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.preferencesDataStore
 import com.metrolist.music.extensions.toEnum
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.properties.ReadOnlyProperty
+import java.util.WeakHashMap
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
+private const val DATASTORE_SYNC_READ_TIMEOUT_MS = 250L
+
+private val dataStoreScopeCache = WeakHashMap<DataStore<Preferences>, CoroutineScope>()
+private val dataStoreSnapshotCache = WeakHashMap<DataStore<Preferences>, MutableStateFlow<Preferences?>>()
+private val dataStoreCollectorsStarted = WeakHashMap<DataStore<Preferences>, Boolean>()
+private val dataStoreCacheLock = Any()
+
+private fun DataStore<Preferences>.snapshotState(): MutableStateFlow<Preferences?> =
+    synchronized(dataStoreCacheLock) {
+        dataStoreSnapshotCache.getOrPut(this) { MutableStateFlow(null) }
+    }
+
+private fun DataStore<Preferences>.snapshotScope(): CoroutineScope =
+    synchronized(dataStoreCacheLock) {
+        dataStoreScopeCache.getOrPut(this) {
+            CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        }
+    }
+
+fun DataStore<Preferences>.warmupCache() {
+    val shouldStart =
+        synchronized(dataStoreCacheLock) {
+            if (dataStoreCollectorsStarted[this] == true) {
+                false
+            } else {
+                dataStoreCollectorsStarted[this] = true
+                true
+            }
+        }
+    if (!shouldStart) return
+
+    val snapshotState = snapshotState()
+    snapshotScope().launch {
+        runCatching {
+            data.collect { snapshot ->
+                snapshotState.value = snapshot
+            }
+        }.onFailure {
+            // Keep sync getters bounded even if cache prewarm fails.
+            reportException(it)
+            synchronized(dataStoreCacheLock) {
+                dataStoreCollectorsStarted[this@warmupCache] = false
+            }
+        }
+    }
+}
+
+fun <T> DataStore<Preferences>.peek(key: Preferences.Key<T>): T? {
+    warmupCache()
+    return snapshotState().value?.get(key)
+}
+
 operator fun <T> DataStore<Preferences>.get(key: Preferences.Key<T>): T? =
-    runBlocking(Dispatchers.IO) {
-        data.first()[key]
+    peek(key) ?: runBlocking(Dispatchers.IO) {
+        // Bound sync fallback to reduce ANR risk when called from main-thread callers.
+        withTimeoutOrNull(DATASTORE_SYNC_READ_TIMEOUT_MS) {
+            data.first()[key]
+        }
     }
 
 fun <T> DataStore<Preferences>.get(
     key: Preferences.Key<T>,
     defaultValue: T,
 ): T =
-    runBlocking(Dispatchers.IO) {
-        data.first()[key] ?: defaultValue
-    }
+    get(key) ?: defaultValue
 
 fun <T> preference(
     context: Context,
@@ -54,13 +113,15 @@ fun <T> rememberPreference(
 ): MutableState<T> {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    context.dataStore.warmupCache()
+    val initialValue = context.dataStore.peek(key) ?: defaultValue
 
     val state =
         remember {
             context.dataStore.data
                 .map { it[key] ?: defaultValue }
                 .distinctUntilChanged()
-        }.collectAsState(context.dataStore[key] ?: defaultValue)
+        }.collectAsState(initialValue)
 
     return remember {
         object : MutableState<T> {
@@ -88,8 +149,9 @@ inline fun <reified T : Enum<T>> rememberEnumPreference(
 ): MutableState<T> {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    context.dataStore.warmupCache()
 
-    val initialValue = context.dataStore[key].toEnum(defaultValue = defaultValue)
+    val initialValue = context.dataStore.peek(key).toEnum(defaultValue = defaultValue)
     val state =
         remember {
             context.dataStore.data

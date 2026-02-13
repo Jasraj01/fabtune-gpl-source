@@ -117,6 +117,8 @@ import com.metrolist.music.extensions.toMediaItem
 import com.metrolist.music.models.MediaMetadata
 import com.metrolist.music.playback.queues.LocalAlbumRadio
 import com.metrolist.music.ui.theme.extractThemeColor
+import com.metrolist.music.ui.component.image.ProgressiveImageModel
+import com.metrolist.music.ui.component.image.ProgressiveNetworkImage
 import com.metrolist.music.utils.joinByBullet
 import com.metrolist.music.utils.makeTimeString
 import com.metrolist.music.utils.rememberPreference
@@ -492,14 +494,17 @@ fun ArtistListItem(
     subtitle = pluralStringResource(R.plurals.n_song, artist.songCount, artist.songCount),
     badges = badges,
     thumbnailContent = {
-        AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
-                .data(artist.artist.thumbnailUrl)
-                .memoryCachePolicy(coil3.request.CachePolicy.ENABLED)
-                .diskCachePolicy(coil3.request.CachePolicy.ENABLED)
-                .networkCachePolicy(coil3.request.CachePolicy.ENABLED)
-                .build(),
+        ProgressiveNetworkImage(
+            model = ProgressiveImageModel(
+                stableKey = "artist_list_${artist.id}",
+                url = artist.artist.thumbnailUrl,
+            ),
             contentDescription = null,
+            placeholderResId = R.drawable.artist,
+            errorResId = R.drawable.artist,
+            fallbackResId = R.drawable.artist,
+            thumbnailSizePx = 96,
+            mediumSizePx = 220,
             modifier = Modifier
                 .size(ListThumbnailSize)
                 .clip(CircleShape),
@@ -524,15 +529,18 @@ fun ArtistGridItem(
     subtitle = pluralStringResource(R.plurals.n_song, artist.songCount, artist.songCount),
     badges = badges,
     thumbnailContent = {
-        AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
-                .data(artist.artist.thumbnailUrl)
-                .memoryCachePolicy(coil3.request.CachePolicy.ENABLED)
-                .diskCachePolicy(coil3.request.CachePolicy.ENABLED)
-                .networkCachePolicy(coil3.request.CachePolicy.ENABLED)
-                .build(),
+        ProgressiveNetworkImage(
+            model = ProgressiveImageModel(
+                stableKey = "artist_grid_${artist.id}",
+                url = artist.artist.thumbnailUrl,
+            ),
             contentDescription = null,
+            placeholderResId = R.drawable.artist,
+            errorResId = R.drawable.artist,
+            fallbackResId = R.drawable.artist,
             contentScale = ContentScale.Crop,
+            thumbnailSizePx = 144,
+            mediumSizePx = 640,
             modifier = Modifier
                 .fillMaxSize()
                 .clip(CircleShape)
@@ -560,19 +568,19 @@ fun AlbumListItem(
 
         val allDownloads by downloadUtil.downloads.collectAsState()
 
-        val downloadState by remember(songs, allDownloads) {
-            mutableStateOf(
-                if (songs.isEmpty()) {
-                    Download.STATE_STOPPED
-                } else {
-                    when {
-                        songs.all { allDownloads[it.id]?.state == STATE_COMPLETED } -> STATE_COMPLETED
-                        songs.any { allDownloads[it.id]?.state in listOf(STATE_QUEUED, STATE_DOWNLOADING) } -> STATE_DOWNLOADING
-                        else -> Download.STATE_STOPPED
-                    }
+        val downloadState =
+            if (songs.isEmpty()) {
+                Download.STATE_STOPPED
+            } else {
+                when {
+                    songs.all { allDownloads[it.id]?.state == STATE_COMPLETED } -> STATE_COMPLETED
+                    songs.any {
+                        val state = allDownloads[it.id]?.state
+                        state == STATE_QUEUED || state == STATE_DOWNLOADING
+                    } -> STATE_DOWNLOADING
+                    else -> Download.STATE_STOPPED
                 }
-            )
-        }
+            } // ANR FIX – stabilize recomposition allocations
 
         if (showLikedIcon && album.album.bookmarkedAt != null) {
             Icon.Favorite()
@@ -623,19 +631,19 @@ fun AlbumGridItem(
 
         val allDownloads by downloadUtil.downloads.collectAsState()
 
-        val downloadState by remember(songs, allDownloads) {
-            mutableStateOf(
-                if (songs.isEmpty()) {
-                    Download.STATE_STOPPED
-                } else {
-                    when {
-                        songs.all { allDownloads[it.id]?.state == STATE_COMPLETED } -> STATE_COMPLETED
-                        songs.any { allDownloads[it.id]?.state in listOf(STATE_QUEUED, STATE_DOWNLOADING) } -> STATE_DOWNLOADING
-                        else -> Download.STATE_STOPPED
-                    }
+        val downloadState =
+            if (songs.isEmpty()) {
+                Download.STATE_STOPPED
+            } else {
+                when {
+                    songs.all { allDownloads[it.id]?.state == STATE_COMPLETED } -> STATE_COMPLETED
+                    songs.any {
+                        val state = allDownloads[it.id]?.state
+                        state == STATE_QUEUED || state == STATE_DOWNLOADING
+                    } -> STATE_DOWNLOADING
+                    else -> Download.STATE_STOPPED
                 }
-            )
-        }
+            } // ANR FIX – stabilize recomposition allocations
 
         if (album.album.bookmarkedAt != null) {
             Icon.Favorite()
@@ -716,19 +724,19 @@ fun PlaylistListItem(
 
         val allDownloads by downloadUtil.downloads.collectAsState()
 
-        val downloadState by remember(songs, allDownloads) {
-            mutableStateOf(
-                if (songs.isEmpty()) {
-                    Download.STATE_STOPPED
-                } else {
-                    when {
-                        songs.all { allDownloads[it.id]?.state == STATE_COMPLETED } -> STATE_COMPLETED
-                        songs.any { allDownloads[it.id]?.state in listOf(STATE_QUEUED, STATE_DOWNLOADING) } -> STATE_DOWNLOADING
-                        else -> Download.STATE_STOPPED
-                    }
+        val downloadState =
+            if (songs.isEmpty()) {
+                Download.STATE_STOPPED
+            } else {
+                when {
+                    songs.all { allDownloads[it.id]?.state == STATE_COMPLETED } -> STATE_COMPLETED
+                    songs.any {
+                        val state = allDownloads[it.id]?.state
+                        state == STATE_QUEUED || state == STATE_DOWNLOADING
+                    } -> STATE_DOWNLOADING
+                    else -> Download.STATE_STOPPED
                 }
-            )
-        }
+            } // ANR FIX – stabilize recomposition allocations
 
         Icon.Download(downloadState)
     },
@@ -771,7 +779,8 @@ fun PlaylistListItem(
                     modifier = Modifier.size(ListThumbnailSize / 2)
                 )
             },
-            shape = RoundedCornerShape(ThumbnailCornerRadius)
+            shape = RoundedCornerShape(ThumbnailCornerRadius),
+            cacheKey = "${playlist.playlist.id}_${playlist.playlist.thumbnailUrl}_${playlist.playlist.lastUpdateTime}"
         )
     },
     trailingContent = trailingContent,
@@ -795,19 +804,19 @@ fun PlaylistGridItem(
 
         val allDownloads by downloadUtil.downloads.collectAsState()
 
-        val downloadState by remember(songs, allDownloads) {
-            mutableStateOf(
-                if (songs.isEmpty()) {
-                    Download.STATE_STOPPED
-                } else {
-                    when {
-                        songs.all { allDownloads[it.id]?.state == STATE_COMPLETED } -> STATE_COMPLETED
-                        songs.any { allDownloads[it.id]?.state in listOf(STATE_QUEUED, STATE_DOWNLOADING) } -> STATE_DOWNLOADING
-                        else -> Download.STATE_STOPPED
-                    }
+        val downloadState =
+            if (songs.isEmpty()) {
+                Download.STATE_STOPPED
+            } else {
+                when {
+                    songs.all { allDownloads[it.id]?.state == STATE_COMPLETED } -> STATE_COMPLETED
+                    songs.any {
+                        val state = allDownloads[it.id]?.state
+                        state == STATE_QUEUED || state == STATE_DOWNLOADING
+                    } -> STATE_DOWNLOADING
+                    else -> Download.STATE_STOPPED
                 }
-            )
-        }
+            } // ANR FIX – stabilize recomposition allocations
 
         Icon.Download(downloadState)
     },
@@ -874,7 +883,8 @@ fun PlaylistGridItem(
                     )
                 }
             },
-            shape = RoundedCornerShape(ThumbnailCornerRadius)
+            shape = RoundedCornerShape(ThumbnailCornerRadius),
+            cacheKey = "${playlist.playlist.id}_${playlist.playlist.thumbnailUrl}_${playlist.playlist.lastUpdateTime}"
         )
     },
     fillMaxWidth = fillMaxWidth,
@@ -1199,14 +1209,17 @@ fun ItemThumbnail(
             .clip(shape)
     ) {
         if (albumIndex == null) {
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(thumbnailUrl)
-                    .memoryCachePolicy(coil3.request.CachePolicy.ENABLED)
-                    .diskCachePolicy(coil3.request.CachePolicy.ENABLED)
-                    .networkCachePolicy(coil3.request.CachePolicy.ENABLED)
-                    .build(),
+            ProgressiveNetworkImage(
+                model = ProgressiveImageModel(
+                    stableKey = "item_thumb_${thumbnailUrl.orEmpty()}",
+                    url = thumbnailUrl,
+                ),
                 contentDescription = null,
+                placeholderResId = R.drawable.album_search,
+                errorResId = R.drawable.album_search,
+                fallbackResId = R.drawable.album_search,
+                thumbnailSizePx = 144,
+                mediumSizePx = 640,
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(shape)
@@ -1373,6 +1386,7 @@ fun PlaylistThumbnail(
     shape: Shape,
     cacheKey: String? = null
 ) {
+    val effectiveCacheKey = cacheKey ?: thumbnails.joinToString(separator = "|")
     when (thumbnails.size) {
         0 -> Box(
             contentAlignment = Alignment.Center,
@@ -1386,7 +1400,8 @@ fun PlaylistThumbnail(
         1 -> AsyncImage(
             model = ImageRequest.Builder(LocalContext.current)
                 .data(thumbnails[0])
-                .apply { /* Removed cache key extensions due to unresolved in env */ }
+                .memoryCacheKey("${effectiveCacheKey}_0")
+                .diskCacheKey("${effectiveCacheKey}_0")
                 .memoryCachePolicy(coil3.request.CachePolicy.ENABLED)
                 .diskCachePolicy(coil3.request.CachePolicy.ENABLED)
                 .networkCachePolicy(coil3.request.CachePolicy.ENABLED)
@@ -1413,7 +1428,8 @@ fun PlaylistThumbnail(
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
                         .data(thumbnails.getOrNull(index))
-                        .apply { /* Removed cache key extensions due to unresolved in env */ }
+                        .memoryCacheKey("${effectiveCacheKey}_$index")
+                        .diskCacheKey("${effectiveCacheKey}_$index")
                         .memoryCachePolicy(coil3.request.CachePolicy.ENABLED)
                         .diskCachePolicy(coil3.request.CachePolicy.ENABLED)
                         .networkCachePolicy(coil3.request.CachePolicy.ENABLED)

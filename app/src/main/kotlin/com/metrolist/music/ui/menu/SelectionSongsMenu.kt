@@ -65,8 +65,6 @@ import com.metrolist.music.ui.component.NewAction
 import com.metrolist.music.ui.component.NewActionGrid
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 import java.time.LocalDateTime
 
 @SuppressLint("MutableCollectionMutableState")
@@ -552,11 +550,8 @@ fun SelectionMediaMetadataMenu(
         isVisible = showChoosePlaylistDialog,
         onGetSong = {
             songSelection.map {
-                runBlocking {
-                    withContext(Dispatchers.IO) {
-                        database.insert(it)
-                    }
-                }
+                // Called from AddToPlaylistDialog IO coroutine; avoid nested blocking.
+                database.insert(it)
                 it.id
             }
         },

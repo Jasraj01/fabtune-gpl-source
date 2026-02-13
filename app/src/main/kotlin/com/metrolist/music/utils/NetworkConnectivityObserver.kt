@@ -14,18 +14,33 @@ import kotlinx.coroutines.flow.receiveAsFlow
  */
 class NetworkConnectivityObserver(context: Context) {
     private val connectivityManager =
-        context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
     private val _networkStatus = Channel<Boolean>(Channel.CONFLATED)
     val networkStatus = _networkStatus.receiveAsFlow()
+    private var isCallbackRegistered = false
+
+    // ADVANCED FIX – Track network type and VPN state
+    enum class NetworkType {
+        WIFI,
+        MOBILE,
+        VPN,
+        OTHER,
+        NONE,
+    }
+
+    private val _networkType = Channel<NetworkType>(Channel.CONFLATED)
+    val networkType = _networkType.receiveAsFlow()
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
             _networkStatus.trySend(true)
+            _networkType.trySend(currentNetworkType())
         }
 
         override fun onLost(network: Network) {
             _networkStatus.trySend(false)
+            _networkType.trySend(NetworkType.NONE)
         }
     }
 
@@ -37,6 +52,7 @@ class NetworkConnectivityObserver(context: Context) {
 
         try {
             connectivityManager.registerNetworkCallback(request, networkCallback)
+            isCallbackRegistered = true
         } catch (e: Exception) {
             // Fallback: assume connected if registration fails
             _networkStatus.trySend(true)
@@ -45,10 +61,18 @@ class NetworkConnectivityObserver(context: Context) {
         // Send initial state
         val isInitiallyConnected = isCurrentlyConnected()
         _networkStatus.trySend(isInitiallyConnected)
+        _networkType.trySend(currentNetworkType())
     }
 
     fun unregister() {
-        connectivityManager.unregisterNetworkCallback(networkCallback)
+        if (!isCallbackRegistered) return
+        try {
+            connectivityManager.unregisterNetworkCallback(networkCallback)
+            isCallbackRegistered = false
+        } catch (_: IllegalArgumentException) {
+            // Callback may already be unregistered during shutdown races.
+            isCallbackRegistered = false
+        }
     }
 
     /**
@@ -72,6 +96,27 @@ class NetworkConnectivityObserver(context: Context) {
             hasInternet && isValidated
         } catch (e: Exception) {
             false
+        }
+    }
+
+    // ADVANCED FIX – Detect WIFI ↔ MOBILE and VPN on/off
+    private fun currentNetworkType(): NetworkType {
+        return try {
+            val activeNetwork = connectivityManager.activeNetwork ?: return NetworkType.NONE
+            val caps = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return NetworkType.NONE
+
+            val hasVpn = caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+            val isWifi = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+            val isCellular = caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+
+            when {
+                hasVpn -> NetworkType.VPN
+                isWifi -> NetworkType.WIFI
+                isCellular -> NetworkType.MOBILE
+                else -> NetworkType.OTHER
+            }
+        } catch (_: Exception) {
+            NetworkType.NONE
         }
     }
 }

@@ -356,14 +356,14 @@ private fun MainContent(
         )
 
 
-        Text(
-            text = stringResource(id = R.string.improve_innertune),
-            color = Color(0xFFAAAAAA),
-            fontSize = 13.sp,
-            lineHeight = 18.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 1.dp)
-        )
+//        Text(
+//            text = stringResource(id = R.string.improve_innertune),
+//            color = Color(0xFFAAAAAA),
+//            fontSize = 13.sp,
+//            lineHeight = 18.sp,
+//            textAlign = TextAlign.Center,
+//            modifier = Modifier.padding(horizontal = 1.dp)
+//        )
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -521,7 +521,7 @@ private fun Footer(modifier: Modifier = Modifier) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Privacy Policy",
+                text = stringResource(R.string.privacy_p),
                 color = Color.White,
                 fontSize = 14.sp,
                 modifier = Modifier.clickable {
@@ -532,7 +532,7 @@ private fun Footer(modifier: Modifier = Modifier) {
             )
             Text("  •  ", color = Color.White, fontSize = 14.sp)
             Text(
-                text = "Terms of Service",
+                text = stringResource(R.string.terms_p),
                 color = Color.White,
                 fontSize = 14.sp,
                 modifier = Modifier.clickable {

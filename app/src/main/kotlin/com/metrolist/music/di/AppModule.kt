@@ -11,7 +11,7 @@ import com.metrolist.music.constants.MaxSongCacheSizeKey
 import com.metrolist.music.db.InternalDatabase
 import com.metrolist.music.db.MusicDatabase
 import com.metrolist.music.utils.dataStore
-import com.metrolist.music.utils.get
+import com.metrolist.music.utils.peek
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -66,7 +66,7 @@ object AppModule {
         @ApplicationContext context: Context,
         databaseProvider: DatabaseProvider,
     ): SimpleCache {
-        val cacheSize = context.dataStore[MaxSongCacheSizeKey] ?: 1024
+        val cacheSize = context.dataStore.peek(MaxSongCacheSizeKey) ?: 1024
         return SimpleCache(
             context.filesDir.resolve("exoplayer"),
             when (cacheSize) {

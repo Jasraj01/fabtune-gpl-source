@@ -21,6 +21,7 @@ import com.metrolist.innertube.models.YouTubeClient.Companion.WEB_CREATOR
 import com.metrolist.innertube.models.YouTubeClient.Companion.WEB_REMIX
 import com.metrolist.innertube.models.response.PlayerResponse
 import okhttp3.OkHttpClient
+import okhttp3.Request
 import timber.log.Timber
 
 object YTPlayerUtils {
@@ -36,6 +37,16 @@ object YTPlayerUtils {
             } ?: response.request
         }
         .build()
+
+    // ADVANCED FIX – Adaptive client success/failure tracking
+    private data class ClientStats(
+        var successCount: Int = 0,
+        var failureCount: Int = 0,
+        var blacklistUntilMs: Long = 0L,
+    )
+
+    // This state is in-memory only and resets on app restart.
+    private val clientStats: MutableMap<YouTubeClient, ClientStats> = mutableMapOf()
     /**
      * The main client is used for metadata and initial streams.
      * Do not use other clients for this because it can result in inconsistent metadata.
@@ -114,7 +125,14 @@ object YTPlayerUtils {
         var streamExpiresInSeconds: Int? = null
         var streamPlayerResponse: PlayerResponse? = null
 
-        for (clientIndex in (-1 until STREAM_FALLBACK_CLIENTS.size)) {
+        // ADVANCED FIX – Adaptive client rotation and temporary blacklist
+        val orderedFallbackClients = STREAM_FALLBACK_CLIENTS
+            .sortedByDescending { client ->
+                val stats = clientStats[client]
+                if (stats == null) 0 else stats.successCount - stats.failureCount
+            }
+
+        for (clientIndex in (-1 until orderedFallbackClients.size)) {
             // reset for each client
             format = null
             streamUrl = null
@@ -129,8 +147,16 @@ object YTPlayerUtils {
                 Timber.tag(logTag).d("Trying stream from MAIN_CLIENT: ${client.clientName}")
             } else {
                 // after main client use fallback clients
-                client = STREAM_FALLBACK_CLIENTS[clientIndex]
-                Timber.tag(logTag).d("Trying fallback client ${clientIndex + 1}/${STREAM_FALLBACK_CLIENTS.size}: ${client.clientName}")
+                client = orderedFallbackClients[clientIndex]
+
+                val now = System.currentTimeMillis()
+                val stats = clientStats.getOrPut(client) { ClientStats() }
+                if (stats.blacklistUntilMs > now) {
+                    Timber.tag(logTag).d("Skipping blacklisted client: ${client.clientName}")
+                    continue
+                }
+
+                Timber.tag(logTag).d("Trying fallback client ${clientIndex + 1}/${orderedFallbackClients.size}: ${client.clientName}")
 
                 if (client.loginRequired && !isLoggedIn && YouTube.cookie == null) {
                     // skip client if it requires login but user is not logged in
@@ -164,32 +190,47 @@ object YTPlayerUtils {
                 streamUrl = findUrlOrNull(format, videoId)
                 if (streamUrl == null) {
                     Timber.tag(logTag).d("Stream URL not found for format")
+                    clientStats[client]?.let { it.failureCount++ }
                     continue
                 }
 
                 streamExpiresInSeconds = streamPlayerResponse.streamingData?.expiresInSeconds
                 if (streamExpiresInSeconds == null) {
                     Timber.tag(logTag).d("Stream expiration time not found")
+                    clientStats[client]?.let { it.failureCount++ }
                     continue
                 }
 
                 Timber.tag(logTag).d("Stream expires in: $streamExpiresInSeconds seconds")
 
-                if (clientIndex == STREAM_FALLBACK_CLIENTS.size - 1) {
-                    /** skip [validateStatus] for last client */
-                    Timber.tag(logTag).d("Using last fallback client without validation: ${STREAM_FALLBACK_CLIENTS[clientIndex].clientName}")
-                    break
-                }
-
+                // ADVANCED FIX – Always validate stream before handing to ExoPlayer
                 if (validateStatus(streamUrl)) {
                     // working stream found
-                    Timber.tag(logTag).d("Stream validated successfully with client: ${if (clientIndex == -1) MAIN_CLIENT.clientName else STREAM_FALLBACK_CLIENTS[clientIndex].clientName}")
+                    Timber.tag(logTag).d(
+                        "Stream validated successfully with client: ${
+                            if (clientIndex == -1) MAIN_CLIENT.clientName else client.clientName
+                        }"
+                    )
+                    clientStats[client]?.let { it.successCount++ }
                     break
                 } else {
-                    Timber.tag(logTag).d("Stream validation failed for client: ${if (clientIndex == -1) MAIN_CLIENT.clientName else STREAM_FALLBACK_CLIENTS[clientIndex].clientName}")
+                    Timber.tag(logTag).d(
+                        "Stream validation failed for client: ${
+                            if (clientIndex == -1) MAIN_CLIENT.clientName else client.clientName
+                        }"
+                    )
+                    clientStats[client]?.let {
+                        it.failureCount++
+                        // ADVANCED FIX – Temporarily blacklist noisy clients
+                        if (it.failureCount - it.successCount >= 3 && it.blacklistUntilMs <= 0L) {
+                            it.blacklistUntilMs = System.currentTimeMillis() + 5 * 60_000L
+                            Timber.tag(logTag).d("Blacklisting client for session: ${client.clientName}")
+                        }
+                    }
                 }
             } else {
                 Timber.tag(logTag).d("Player response status not OK: ${streamPlayerResponse?.playabilityStatus?.status}, reason: ${streamPlayerResponse?.playabilityStatus?.reason}")
+                clientStats[client]?.let { it.failureCount++ }
             }
         }
 
@@ -294,18 +335,37 @@ object YTPlayerUtils {
      * If this returns false the url might cause an error during playback.
      */
     private fun validateStatus(url: String): Boolean {
-        Timber.tag(logTag).d("Validating stream URL status")
-        try {
-            val requestBuilder = okhttp3.Request.Builder()
+        // ADVANCED FIX – Stream HEAD validation (status, type, length)
+        Timber.tag(logTag).d("Validating stream URL status and headers")
+
+        val request: Request =
+            Request.Builder()
                 .head()
                 .url(url)
-            val response = httpClient.newCall(requestBuilder.build()).execute()
-            val isSuccessful = response.isSuccessful
-            Timber.tag(logTag).d("Stream URL validation result: ${if (isSuccessful) "Success" else "Failed"} (${response.code})")
-            return isSuccessful
+                .build()
+
+        val call = httpClient.newCall(request)
+        try {
+            val response = call.execute()
+            response.use {
+                val codeOk = it.code == 200
+                val contentType = it.header("Content-Type") ?: ""
+                val isAudio = contentType.startsWith("audio/")
+                val contentLength = it.header("Content-Length")?.toLongOrNull() ?: -1L
+                val hasLength = contentLength > 0L
+
+                val valid = codeOk && isAudio && hasLength
+                Timber.tag(logTag).d(
+                    "Stream URL validation result: ${if (valid) "Success" else "Failed"} " +
+                        "(code=${it.code}, type=$contentType, length=$contentLength)"
+                )
+                return valid
+            }
         } catch (e: Exception) {
             Timber.tag(logTag).e(e, "Stream URL validation failed with exception")
             reportException(e)
+            // Cancel call in case this was triggered by coroutine cancellation.
+            call.cancel()
         }
         return false
     }

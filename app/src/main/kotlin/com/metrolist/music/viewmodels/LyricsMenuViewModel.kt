@@ -12,7 +12,9 @@ import com.metrolist.music.lyrics.LyricsHelper
 import com.metrolist.music.lyrics.LyricsResult
 import com.metrolist.music.models.MediaMetadata
 import com.metrolist.music.utils.NetworkConnectivityObserver
+import com.metrolist.music.utils.reportException
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +22,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 
 @HiltViewModel
@@ -32,6 +33,9 @@ constructor(
     private val networkConnectivity: NetworkConnectivityObserver,
 ) : ViewModel() {
     private var job: Job? = null
+    private val coroutineExceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        reportException(throwable)
+    }
     val results = MutableStateFlow(emptyList<LyricsResult>())
     val isLoading = MutableStateFlow(false)
 
@@ -89,13 +93,13 @@ constructor(
         mediaMetadata: MediaMetadata,
         lyricsEntity: LyricsEntity?,
     ) {
-        database.query {
-            lyricsEntity?.let(::delete)
-            val lyrics =
-                runBlocking {
-                    lyricsHelper.getLyrics(mediaMetadata)
-                }
-            upsert(LyricsEntity(mediaMetadata.id, lyrics))
+        viewModelScope.launch(Dispatchers.IO + coroutineExceptionHandler) {
+            // Fetch lyrics and update DB off main to avoid UI stalls during retry.
+            val lyrics = lyricsHelper.getLyrics(mediaMetadata)
+            database.query {
+                lyricsEntity?.let(::delete)
+                upsert(LyricsEntity(mediaMetadata.id, lyrics))
+            }
         }
     }
 }

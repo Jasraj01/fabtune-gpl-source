@@ -16,11 +16,15 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -32,6 +36,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -47,6 +52,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -99,6 +105,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastAny
@@ -147,7 +154,6 @@ import com.metrolist.music.ui.component.OverlayEditButton
 import com.metrolist.music.ui.component.SongListItem
 import com.metrolist.music.ui.component.SortHeader
 import com.metrolist.music.ui.component.TextFieldDialog
-import com.metrolist.music.ui.menu.CustomThumbnailMenu
 import com.metrolist.music.ui.menu.SelectionSongMenu
 import com.metrolist.music.ui.menu.SongMenu
 import com.metrolist.music.ui.screens.settings.DarkMode
@@ -553,7 +559,10 @@ fun LocalPlaylistScreen(
                                                 else if (playlist.playlist.bookmarkedAt != null) "Saved"
                                                 else "Save",
                                                 style = MaterialTheme.typography.labelLarge,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                softWrap = false
                                             )
                                         }
                                     }
@@ -586,7 +595,10 @@ fun LocalPlaylistScreen(
                                             Text(
                                                 text = "Play",
                                                 style = MaterialTheme.typography.labelLarge,
-                                                color = MaterialTheme.colorScheme.onPrimary
+                                                color = MaterialTheme.colorScheme.onPrimary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                softWrap = false
                                             )
                                         }
                                     }
@@ -642,163 +654,70 @@ fun LocalPlaylistScreen(
 
                                 Spacer(Modifier.height(24.dp))
 
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 32.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
-                                ) {
-                                    ToggleButton(
-                                        checked = downloadState == Download.STATE_COMPLETED || downloadState == Download.STATE_DOWNLOADING,
-                                        onCheckedChange = {
-                                            when (downloadState) {
-                                                Download.STATE_COMPLETED, Download.STATE_DOWNLOADING -> {
-                                                    showRemoveDownloadDialog = true
-                                                }
-                                                else -> {
-                                                    songs.forEach { song ->
-                                                        val downloadRequest = DownloadRequest
-                                                            .Builder(song.song.id, song.song.id.toUri())
-                                                            .setCustomCacheKey(song.song.id)
-                                                            .setData(song.song.song.title.toByteArray())
-                                                            .build()
-                                                        DownloadService.sendAddDownload(
-                                                            context,
-                                                            ExoDownloadService::class.java,
-                                                            downloadRequest,
-                                                            false,
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        modifier = Modifier.weight(1f).semantics { role = Role.Button },
-                                        shapes = ButtonGroupDefaults.connectedLeadingButtonShapes(),
-                                    ) {
+                                PlaylistActionButtons(
+                                    playlist = playlist,
+                                    editable = editable,
+                                    downloadState = downloadState,
+                                    onSaveToggle = {
                                         when (downloadState) {
-                                            Download.STATE_COMPLETED -> {
-                                                Icon(
-                                                    painter = painterResource(R.drawable.offline),
-                                                    contentDescription = "saved",
-                                                    modifier = Modifier.size(20.dp)
-                                                )
-                                            }
-                                            Download.STATE_DOWNLOADING -> {
-                                                CircularProgressIndicator(
-                                                    strokeWidth = 2.dp,
-                                                    modifier = Modifier.size(16.dp),
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
+                                            Download.STATE_COMPLETED, Download.STATE_DOWNLOADING -> {
+                                                showRemoveDownloadDialog = true
                                             }
                                             else -> {
-                                                Icon(
-                                                    painter = painterResource(R.drawable.download),
-                                                    contentDescription = "save",
-                                                    modifier = Modifier.size(20.dp)
-                                                )
+                                                songs.forEach { song ->
+                                                    val downloadRequest = DownloadRequest
+                                                        .Builder(song.song.id, song.song.id.toUri())
+                                                        .setCustomCacheKey(song.song.id)
+                                                        .setData(song.song.song.title.toByteArray())
+                                                        .build()
+                                                    DownloadService.sendAddDownload(
+                                                        context,
+                                                        ExoDownloadService::class.java,
+                                                        downloadRequest,
+                                                        false,
+                                                    )
+                                                }
                                             }
                                         }
-                                        Spacer(Modifier.size(ToggleButtonDefaults.IconSpacing))
-                                        Text(
-                                            text = when (downloadState) {
-                                                Download.STATE_COMPLETED -> "saved"
-                                                Download.STATE_DOWNLOADING -> "saving"
-                                                else -> "save"
-                                            },
-                                            style = MaterialTheme.typography.labelMedium
+                                    },
+                                    onShuffle = {
+                                        playerConnection.playQueue(
+                                            ListQueue(
+                                                title = playlist.playlist.name,
+                                                items = songs.shuffled().map { it.song.toMediaItem() },
+                                            ),
                                         )
-                                    }
-
-                                    ToggleButton(
-                                        checked = false,
-                                        onCheckedChange = {
-                                            playerConnection.playQueue(
-                                                ListQueue(
-                                                    title = playlist.playlist.name,
-                                                    items = songs.shuffled().map { it.song.toMediaItem() },
-                                                ),
-                                            )
-                                        },
-                                        modifier = Modifier.weight(1f).semantics { role = Role.Button },
-                                        shapes = when {
-                                            playlist.playlist.browseId != null -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                                            editable -> ButtonGroupDefaults.connectedMiddleButtonShapes()
-                                            else -> ButtonGroupDefaults.connectedTrailingButtonShapes()
-                                        },
-                                    ) {
-                                        Icon(
-                                            painter = painterResource(R.drawable.shuffle),
-                                            contentDescription = "Shuffle",
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                        Spacer(Modifier.size(ToggleButtonDefaults.IconSpacing))
-                                        Text("Shuffle", style = MaterialTheme.typography.labelMedium)
-                                    }
-
-                                    if (playlist.playlist.browseId != null) {
-                                        ToggleButton(
-                                            checked = false,
-                                            onCheckedChange = {
-                                                coroutineScope.launch(Dispatchers.IO) {
-                                                    val playlistPage = YouTube.playlist(playlist.playlist.browseId)
-                                                        .completed()
-                                                        .getOrNull() ?: return@launch
-                                                    database.transaction {
-                                                        clearPlaylist(playlist.id)
-                                                        playlistPage.songs
-                                                            .map(SongItem::toMediaMetadata)
-                                                            .onEach(::insert)
-                                                            .mapIndexed { position, song ->
-                                                                PlaylistSongMap(
-                                                                    songId = song.id,
-                                                                    playlistId = playlist.id,
-                                                                    position = position,
-                                                                    setVideoId = song.setVideoId
-                                                                )
-                                                            }
-                                                            .forEach(::insert)
-                                                    }
+                                    },
+                                    onSync = {
+                                        val syncBrowseId = playlist.playlist.browseId
+                                        if (syncBrowseId != null) {
+                                            coroutineScope.launch(Dispatchers.IO) {
+                                                val playlistPage = YouTube.playlist(syncBrowseId)
+                                                    .completed()
+                                                    .getOrNull() ?: return@launch
+                                                database.transaction {
+                                                    clearPlaylist(playlist.id)
+                                                    playlistPage.songs
+                                                        .map(SongItem::toMediaMetadata)
+                                                        .onEach(::insert)
+                                                        .mapIndexed { position, song ->
+                                                            PlaylistSongMap(
+                                                                songId = song.id,
+                                                                playlistId = playlist.id,
+                                                                position = position,
+                                                                setVideoId = song.setVideoId
+                                                            )
+                                                        }
+                                                        .forEach(::insert)
                                                 }
-                                                coroutineScope.launch(Dispatchers.Main) {
-                                                    snackbarHostState.showSnackbar(context.getString(R.string.playlist_synced))
-                                                }
-                                            },
-                                            modifier = Modifier.weight(1f).semantics { role = Role.Button },
-                                            shapes = if (editable) {
-                                                ButtonGroupDefaults.connectedMiddleButtonShapes()
-                                            } else {
-                                                ButtonGroupDefaults.connectedTrailingButtonShapes()
-                                            },
-                                        ) {
-                                            Icon(
-                                                painter = painterResource(R.drawable.sync),
-                                                contentDescription = "Sync",
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                            Spacer(Modifier.size(ToggleButtonDefaults.IconSpacing))
-                                            Text("Sync", style = MaterialTheme.typography.labelMedium)
+                                            }
+                                            coroutineScope.launch(Dispatchers.Main) {
+                                                snackbarHostState.showSnackbar(context.getString(R.string.playlist_synced))
+                                            }
                                         }
-                                    }
-
-                                    if (editable) {
-                                        ToggleButton(
-                                            checked = false,
-                                            onCheckedChange = {
-                                                showEditDialog = true
-                                            },
-                                            modifier = Modifier.weight(1f).semantics { role = Role.Button },
-                                            shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
-                                        ) {
-                                            Icon(
-                                                painter = painterResource(R.drawable.edit),
-                                                contentDescription = "Edit",
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                            Spacer(Modifier.size(ToggleButtonDefaults.IconSpacing))
-                                            Text("Edit", style = MaterialTheme.typography.labelMedium)
-                                        }
-                                    }
-                                }
+                                    },
+                                    onEdit = { showEditDialog = true }
+                                )
 
                                 Spacer(Modifier.height(24.dp))
                             }
@@ -1366,6 +1285,318 @@ fun LocalPlaylistScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun PlaylistActionButtons(
+    playlist: Playlist,
+    editable: Boolean,
+    downloadState: Int,
+    onSaveToggle: () -> Unit,
+    onShuffle: () -> Unit,
+    onSync: () -> Unit,
+    onEdit: () -> Unit,
+) {
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 32.dp)
+    ) {
+        val buttonCount = 2 + (if (playlist.playlist.browseId != null) 1 else 0) + (if (editable) 1 else 0)
+        // Wrap to a second row only when there is not enough width for all connected buttons.
+        val shouldWrapButtons = maxWidth < (buttonCount * 90).dp
+
+        if (shouldWrapButtons) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
+                verticalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
+            ) {
+                DownloadToggleButton(
+                    downloadState = downloadState,
+                    onCheckedChange = onSaveToggle,
+                    modifier = Modifier.semantics { role = Role.Button }
+                )
+
+                ShuffleToggleButton(
+                    onCheckedChange = onShuffle,
+                    modifier = Modifier.semantics { role = Role.Button }
+                )
+
+                if (playlist.playlist.browseId != null) {
+                    SyncToggleButton(
+                        onCheckedChange = onSync,
+                        modifier = Modifier.semantics { role = Role.Button }
+                    )
+                }
+
+                if (editable) {
+                    EditToggleButton(
+                        onCheckedChange = onEdit,
+                        modifier = Modifier.semantics { role = Role.Button }
+                    )
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
+            ) {
+                ToggleButton(
+                    checked = downloadState == Download.STATE_COMPLETED || downloadState == Download.STATE_DOWNLOADING,
+                    onCheckedChange = { onSaveToggle() },
+                    modifier = Modifier.weight(1f).semantics { role = Role.Button },
+                    shapes = ButtonGroupDefaults.connectedLeadingButtonShapes(),
+                ) {
+                    when (downloadState) {
+                        Download.STATE_COMPLETED -> {
+                            Icon(
+                                painter = painterResource(R.drawable.offline),
+                                contentDescription = "saved",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Download.STATE_DOWNLOADING -> {
+                            CircularProgressIndicator(
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(16.dp),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        else -> {
+                            Icon(
+                                painter = painterResource(R.drawable.download),
+                                contentDescription = "save",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.size(ToggleButtonDefaults.IconSpacing))
+                    Text(
+                        text = when (downloadState) {
+                            Download.STATE_COMPLETED -> "saved"
+                            Download.STATE_DOWNLOADING -> "saving"
+                            else -> "save"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        softWrap = false
+                    )
+                }
+
+                ToggleButton(
+                    checked = false,
+                    onCheckedChange = { onShuffle() },
+                    modifier = Modifier.weight(1f).semantics { role = Role.Button },
+                    shapes = when {
+                        playlist.playlist.browseId != null -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                        editable -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                        else -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    },
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.shuffle),
+                        contentDescription = "Shuffle",
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.size(ToggleButtonDefaults.IconSpacing))
+                    Text(
+                        text = "Shuffle",
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        softWrap = false
+                    )
+                }
+
+                if (playlist.playlist.browseId != null) {
+                    ToggleButton(
+                        checked = false,
+                        onCheckedChange = { onSync() },
+                        modifier = Modifier.weight(1f).semantics { role = Role.Button },
+                        shapes = if (editable) {
+                            ButtonGroupDefaults.connectedMiddleButtonShapes()
+                        } else {
+                            ButtonGroupDefaults.connectedTrailingButtonShapes()
+                        },
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.sync),
+                            contentDescription = "Sync",
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.size(ToggleButtonDefaults.IconSpacing))
+                        Text(
+                            text = "Sync",
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            softWrap = false
+                        )
+                    }
+                }
+
+                if (editable) {
+                    ToggleButton(
+                        checked = false,
+                        onCheckedChange = { onEdit() },
+                        modifier = Modifier.weight(1f).semantics { role = Role.Button },
+                        shapes = ButtonGroupDefaults.connectedTrailingButtonShapes(),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.edit),
+                            contentDescription = "Edit",
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.size(ToggleButtonDefaults.IconSpacing))
+                        Text(
+                            text = "Edit",
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            softWrap = false
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun DownloadToggleButton(
+    downloadState: Int,
+    onCheckedChange: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ToggleButton(
+        checked = downloadState == Download.STATE_COMPLETED || downloadState == Download.STATE_DOWNLOADING,
+        onCheckedChange = { onCheckedChange() },
+        modifier = modifier,
+    ) {
+        when (downloadState) {
+            Download.STATE_COMPLETED -> {
+                Icon(
+                    painter = painterResource(R.drawable.offline),
+                    contentDescription = "saved",
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            Download.STATE_DOWNLOADING -> {
+                CircularProgressIndicator(
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(16.dp),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            else -> {
+                Icon(
+                    painter = painterResource(R.drawable.download),
+                    contentDescription = "save",
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+        Spacer(Modifier.size(ToggleButtonDefaults.IconSpacing))
+        Text(
+            text = when (downloadState) {
+                Download.STATE_COMPLETED -> "saved"
+                Download.STATE_DOWNLOADING -> "saving"
+                else -> "save"
+            },
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            softWrap = false
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun ShuffleToggleButton(
+    onCheckedChange: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ToggleButton(
+        checked = false,
+        onCheckedChange = { onCheckedChange() },
+        modifier = modifier
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.shuffle),
+            contentDescription = "Shuffle",
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(Modifier.size(ToggleButtonDefaults.IconSpacing))
+        Text(
+            text = "Shuffle",
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            softWrap = false
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun SyncToggleButton(
+    onCheckedChange: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ToggleButton(
+        checked = false,
+        onCheckedChange = { onCheckedChange() },
+        modifier = modifier
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.sync),
+            contentDescription = "Sync",
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(Modifier.size(ToggleButtonDefaults.IconSpacing))
+        Text(
+            text = "Sync",
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            softWrap = false
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun EditToggleButton(
+    onCheckedChange: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ToggleButton(
+        checked = false,
+        onCheckedChange = { onCheckedChange() },
+        modifier = modifier
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.edit),
+            contentDescription = "Edit",
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(Modifier.size(ToggleButtonDefaults.IconSpacing))
+        Text(
+            text = "Edit",
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            softWrap = false
+        )
+    }
+}
+
 @Composable
 fun PlaylistThumbnail(
     playlist: Playlist,
@@ -1378,20 +1609,32 @@ fun PlaylistThumbnail(
     val database = LocalDatabase.current
     val scope = rememberCoroutineScope()
 
-    val overrideThumbnail = remember { mutableStateOf<String?>(null) }
-    val permanentThumbPath = remember { mutableStateOf<String?>(null) }
-    var isCustomThumbnail: Boolean = playlist.thumbnails.firstOrNull()?.let {
-        it.contains("studio_square_thumbnail") || it.contains("content://com.metrolist.music")
-    } ?: false
-
-    val result = remember { mutableStateOf<Uri?>(null) }
+    var overrideThumbnail by rememberSaveable(playlist.playlist.id) {
+        mutableStateOf(playlist.playlist.thumbnailUrl)
+    }
+    var permanentThumbPath by rememberSaveable(playlist.playlist.id) { mutableStateOf<String?>(null) }
+    var result by remember { mutableStateOf<Uri?>(null) }
     var pendingCropDestUri by remember { mutableStateOf<Uri?>(null) }
     var showEditNoteDialog by remember { mutableStateOf(false) }
+    var showDefaultThumbnailImmediately by rememberSaveable(playlist.playlist.id) { mutableStateOf(false) }
+    val browseId = playlist.playlist.browseId
+
+    LaunchedEffect(playlist.playlist.id, playlist.playlist.thumbnailUrl) {
+        overrideThumbnail = playlist.playlist.thumbnailUrl
+        showDefaultThumbnailImmediately = false
+    }
+
+    val isCustomThumbnail = isCustomPlaylistThumbnail(overrideThumbnail ?: playlist.playlist.thumbnailUrl)
+    val displayThumbnails = when {
+        overrideThumbnail != null -> listOf(overrideThumbnail!!)
+        showDefaultThumbnailImmediately -> playlist.songThumbnails.filterNotNull()
+        else -> playlist.thumbnails
+    }
 
     val cropLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
         if (res.resultCode == android.app.Activity.RESULT_OK) {
             val output = res.data?.let { UCrop.getOutput(it) } ?: pendingCropDestUri
-            if (output != null) result.value = output
+            if (output != null) result = output
         }
     }
 
@@ -1409,7 +1652,7 @@ fun PlaylistThumbnail(
             ).apply {
                 parentFile?.mkdirs()
             }
-            permanentThumbPath.value = destFile.absolutePath
+            permanentThumbPath = destFile.absolutePath
 
             val destUri = FileProvider.getUriForFile(context, "${context.packageName}.FileProvider", destFile)
 
@@ -1437,38 +1680,114 @@ fun PlaylistThumbnail(
         }
     }
 
-
-
-    LaunchedEffect(result.value) {
-        val uri = result.value ?: return@LaunchedEffect
-        withContext(Dispatchers.IO) {
-            when {
-                playlist.playlist.browseId == null -> {
-                    overrideThumbnail.value = uri.toString()
-                    isCustomThumbnail = true
+    val resetThumbnail: () -> Unit = {
+        scope.launch {
+            if (browseId == null) {
+                overrideThumbnail = null
+                showDefaultThumbnailImmediately = true
+                withContext(Dispatchers.IO) {
                     database.query {
-                        update(playlist.playlist.copy(thumbnailUrl = permanentThumbPath.value))
+                        update(
+                            playlist.playlist.copy(
+                                thumbnailUrl = null,
+                                lastUpdateTime = LocalDateTime.now()
+                            )
+                        )
                     }
                 }
-                else -> {
-                    val bytes = uriToByteArray(context, uri)
-                    YouTube.uploadCustomThumbnailLink(
-                        playlist.playlist.browseId,
-                        bytes!!
-                    ).onSuccess { newThumbnailUrl ->
-                        overrideThumbnail.value = newThumbnailUrl
-                        isCustomThumbnail = true
+            } else {
+                val nonNullBrowseId = requireNotNull(browseId)
+                withContext(Dispatchers.IO) {
+                    YouTube.removeThumbnailPlaylist(nonNullBrowseId)
+                }.onSuccess { newThumbnailUrl ->
+                    overrideThumbnail = newThumbnailUrl
+                    showDefaultThumbnailImmediately = false
+                    withContext(Dispatchers.IO) {
                         database.query {
-                            update(playlist.playlist.copy(thumbnailUrl = newThumbnailUrl))
+                            update(
+                                playlist.playlist.copy(
+                                    thumbnailUrl = newThumbnailUrl,
+                                    lastUpdateTime = LocalDateTime.now()
+                                )
+                            )
                         }
-                    }.onFailure {
-                        if (it is ClientRequestException) {
-                            snackbarHostState.showSnackbar("${it.response.status.value} ${it.response.status.description}")
-                        }
-                        reportException(it)
                     }
+                }.onFailure {
+                    if (it is ClientRequestException) {
+                        snackbarHostState.showSnackbar("${it.response.status.value} ${it.response.status.description}")
+                    }
+                    reportException(it)
                 }
             }
+        }
+    }
+
+    LaunchedEffect(result) {
+        val uri = result ?: return@LaunchedEffect
+        result = null
+        val previousThumbnail = overrideThumbnail
+        val previousShowDefault = showDefaultThumbnailImmediately
+        overrideThumbnail = uri.toString()
+        showDefaultThumbnailImmediately = false
+
+        if (browseId == null) {
+            withContext(Dispatchers.IO) {
+                database.query {
+                    update(
+                        playlist.playlist.copy(
+                            thumbnailUrl = permanentThumbPath,
+                            lastUpdateTime = LocalDateTime.now()
+                        )
+                    )
+                }
+            }
+            return@LaunchedEffect
+        }
+        val nonNullBrowseId = requireNotNull(browseId)
+
+        val bytes = withContext(Dispatchers.IO) { uriToByteArray(context, uri) }
+        if (bytes == null) {
+            overrideThumbnail = previousThumbnail
+            showDefaultThumbnailImmediately = previousShowDefault
+            return@LaunchedEffect
+        }
+
+        withContext(Dispatchers.IO) {
+            YouTube.uploadCustomThumbnailLink(nonNullBrowseId, bytes)
+        }.onSuccess { newThumbnailUrl ->
+            overrideThumbnail = newThumbnailUrl
+            withContext(Dispatchers.IO) {
+                database.query {
+                    update(
+                        playlist.playlist.copy(
+                            thumbnailUrl = newThumbnailUrl,
+                            lastUpdateTime = LocalDateTime.now()
+                        )
+                    )
+                }
+            }
+        }.onFailure {
+            overrideThumbnail = previousThumbnail
+            showDefaultThumbnailImmediately = previousShowDefault
+            if (it is ClientRequestException) {
+                snackbarHostState.showSnackbar("${it.response.status.value} ${it.response.status.description}")
+            }
+            reportException(it)
+        }
+    }
+
+    val showThumbnailMenu: () -> Unit = {
+        menuState.show {
+            ThumbnailActionsMenu(
+                onEdit = {
+                    pickLauncher.launch(
+                        PickVisualMediaRequest(mediaType = ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                },
+                onReset = resetThumbnail,
+                onRemove = resetThumbnail,
+                onDismiss = menuState::dismiss
+            )
         }
     }
 
@@ -1499,26 +1818,17 @@ fun PlaylistThumbnail(
         }
     }
 
-    when (playlist.thumbnails.size) {
-        0 -> Box(
-            contentAlignment = Alignment.Center,
-            modifier = modifier.background(MaterialTheme.colorScheme.surfaceContainer)
-        ) {
-            Icon(
-                painter = painterResource(R.drawable.queue_music),
-                contentDescription = null,
-                tint = LocalContentColor.current.copy(alpha = 0.8f),
-                modifier = Modifier.size(96.dp)
-            )
-        }
-        1 -> {
+    when {
+        overrideThumbnail != null -> {
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = modifier
             ) {
                 AsyncImage(
                     model = ImageRequest.Builder(context)
-                        .data(overrideThumbnail.value ?: playlist.thumbnails[0])
+                        .data(overrideThumbnail)
+                        .memoryCacheKey("${playlist.playlist.id}_${playlist.playlist.lastUpdateTime}_override")
+                        .diskCacheKey("${playlist.playlist.id}_${playlist.playlist.lastUpdateTime}_override")
                         .build(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
@@ -1529,37 +1839,49 @@ fun PlaylistThumbnail(
                         visible = true,
                         onClick = {
                             if (isCustomThumbnail) {
-                                menuState.show {
-                                    CustomThumbnailMenu(
-                                        onEdit = {
-                                            pickLauncher.launch(
-                                                PickVisualMediaRequest(mediaType = ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                            )
-                                        },
-                                        onRemove = {
-                                            when {
-                                                playlist.playlist.browseId == null -> {
-                                                    overrideThumbnail.value = null
-                                                    database.query {
-                                                        update(playlist.playlist.copy(thumbnailUrl = null))
-                                                    }
-                                                }
-                                                else -> {
-                                                    scope.launch(Dispatchers.IO) {
-                                                        YouTube.removeThumbnailPlaylist(playlist.playlist.browseId).onSuccess { newThumbnailUrl ->
-                                                            overrideThumbnail.value = newThumbnailUrl
-                                                            database.query {
-                                                                update(playlist.playlist.copy(thumbnailUrl = newThumbnailUrl))
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            isCustomThumbnail = false
-                                        },
-                                        onDismiss = menuState::dismiss
-                                    )
-                                }
+                                showThumbnailMenu()
+                            } else {
+                                showEditNoteDialog = true
+                            }
+                        },
+                        alignment = Alignment.BottomEnd
+                    )
+                }
+            }
+        }
+
+        displayThumbnails.size == 0 -> Box(
+            contentAlignment = Alignment.Center,
+            modifier = modifier.background(MaterialTheme.colorScheme.surfaceContainer)
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.queue_music),
+                contentDescription = null,
+                tint = LocalContentColor.current.copy(alpha = 0.8f),
+                modifier = Modifier.size(96.dp)
+            )
+        }
+        displayThumbnails.size == 1 -> {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = modifier
+            ) {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(displayThumbnails[0])
+                        .memoryCacheKey("${playlist.playlist.id}_${playlist.playlist.lastUpdateTime}_single")
+                        .diskCacheKey("${playlist.playlist.id}_${playlist.playlist.lastUpdateTime}_single")
+                        .build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                if (editable) {
+                    OverlayEditButton(
+                        visible = true,
+                        onClick = {
+                            if (isCustomThumbnail) {
+                                showThumbnailMenu()
                             } else {
                                 showEditNoteDialog = true
                             }
@@ -1579,7 +1901,9 @@ fun PlaylistThumbnail(
                 ).fastForEachIndexed { index, alignment ->
                     AsyncImage(
                         model = ImageRequest.Builder(context)
-                            .data(overrideThumbnail.value ?: playlist.thumbnails.getOrNull(index))
+                            .data(displayThumbnails.getOrNull(index))
+                            .memoryCacheKey("${playlist.playlist.id}_${playlist.playlist.lastUpdateTime}_$index")
+                            .diskCacheKey("${playlist.playlist.id}_${playlist.playlist.lastUpdateTime}_$index")
                             .build(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
@@ -1593,37 +1917,7 @@ fun PlaylistThumbnail(
                         visible = true,
                         onClick = {
                             if (isCustomThumbnail) {
-                                menuState.show {
-                                    CustomThumbnailMenu(
-                                        onEdit = {
-                                            pickLauncher.launch(
-                                                PickVisualMediaRequest(mediaType = ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                            )
-                                        },
-                                        onRemove = {
-                                            when {
-                                                playlist.playlist.browseId == null -> {
-                                                    overrideThumbnail.value = null
-                                                    database.query {
-                                                        update(playlist.playlist.copy(thumbnailUrl = null))
-                                                    }
-                                                }
-                                                else -> {
-                                                    scope.launch(Dispatchers.IO) {
-                                                        YouTube.removeThumbnailPlaylist(playlist.playlist.browseId).onSuccess { newThumbnailUrl ->
-                                                            overrideThumbnail.value = newThumbnailUrl
-                                                            database.query {
-                                                                update(playlist.playlist.copy(thumbnailUrl = newThumbnailUrl))
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            isCustomThumbnail = false
-                                        },
-                                        onDismiss = menuState::dismiss
-                                    )
-                                }
+                                showThumbnailMenu()
                             } else {
                                 showEditNoteDialog = true
                             }
@@ -1634,6 +1928,79 @@ fun PlaylistThumbnail(
             }
         }
     }
+}
+
+@Composable
+private fun ThumbnailActionsMenu(
+    onEdit: () -> Unit,
+    onReset: () -> Unit,
+    onRemove: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    LazyColumn(
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            start = 8.dp,
+            top = 8.dp,
+            end = 8.dp,
+            bottom = 8.dp + androidx.compose.foundation.layout.WindowInsets.systemBars.asPaddingValues()
+                .calculateBottomPadding(),
+        ),
+    ) {
+        item {
+            ListItem(
+                headlineContent = { Text(text = stringResource(R.string.choose_from_library)) },
+                leadingContent = {
+                    Icon(
+                        painter = painterResource(R.drawable.insert_photo),
+                        contentDescription = null,
+                    )
+                },
+                modifier = Modifier.clickable {
+                    onEdit()
+                    onDismiss()
+                }
+            )
+        }
+        item {
+            ListItem(
+                headlineContent = { Text(text = "${stringResource(R.string.reset)} thumbnail") },
+                leadingContent = {
+                    Icon(
+                        painter = painterResource(R.drawable.restore),
+                        contentDescription = null,
+                    )
+                },
+                modifier = Modifier.clickable {
+                    onReset()
+                    onDismiss()
+                }
+            )
+        }
+        item {
+            ListItem(
+                headlineContent = { Text(text = stringResource(R.string.remove_custom_image)) },
+                leadingContent = {
+                    Icon(
+                        painter = painterResource(R.drawable.delete),
+                        contentDescription = null,
+                    )
+                },
+                modifier = Modifier.clickable {
+                    onRemove()
+                    onDismiss()
+                }
+            )
+        }
+    }
+}
+
+private fun isCustomPlaylistThumbnail(url: String?): Boolean {
+    if (url.isNullOrBlank()) return false
+    return url.contains("studio_square_thumbnail") ||
+            url.startsWith("content://") ||
+            url.startsWith("file://") ||
+            url.contains("/playlist_thumbs/") ||
+            url.contains("\\playlist_thumbs\\")
 }
 
 fun uriToByteArray(context: Context, uri: Uri): ByteArray? {

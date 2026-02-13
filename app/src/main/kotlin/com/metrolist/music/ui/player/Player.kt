@@ -161,6 +161,7 @@ import com.metrolist.music.lyrics.LyricsEntry
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberUpdatedState
+import coil3.request.crossfade
 import com.metrolist.music.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
 import com.metrolist.music.lyrics.LyricsUtils.parseLyrics
 import com.metrolist.music.ui.theme.PlayerColorExtractor
@@ -171,7 +172,7 @@ import com.metrolist.music.utils.makeTimeString
 import com.metrolist.music.utils.rememberEnumPreference
 import com.metrolist.music.utils.rememberPreference
 import dagger.hilt.android.EntryPointAccessors
-import me.saket.squiggles.SquigglySlider
+import com.metrolist.music.ui.component.SquigglySlider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -707,6 +708,17 @@ fun BottomSheetPlayer(
                         .fillMaxWidth()
                         .padding(horizontal = PlayerHorizontalPadding),
             ) {
+                // UI POLISH – premium album art: inline thumbnail request per track (ID-based)
+                val inlineThumbRequest = remember(mediaMetadata.id) {
+                    ImageRequest.Builder(context)
+                        .data(mediaMetadata.thumbnailUrl)
+                        .memoryCachePolicy(coil3.request.CachePolicy.ENABLED)
+                        .diskCachePolicy(coil3.request.CachePolicy.ENABLED)
+                        .networkCachePolicy(coil3.request.CachePolicy.ENABLED)
+                        .crossfade(230)
+                        .build()
+                }
+
                 AnimatedContent(
                     targetState = showInlineLyrics,
                     label = "ThumbnailAnimation"
@@ -715,7 +727,8 @@ fun BottomSheetPlayer(
                         Row {
                             Row {
                                 AsyncImage(
-                                    model = mediaMetadata.thumbnailUrl,
+                                    // UI POLISH – premium album art: stable, cached inline cover art
+                                    model = inlineThumbRequest,
                                     contentDescription = null,
                                     modifier = Modifier
                                         .size(56.dp)
@@ -895,31 +908,24 @@ fun BottomSheetPlayer(
                                     )
                                 }
                             } else {
-                                FilledIconButton(
-                                    onClick = {
-                                        val intent = Intent().apply {
-                                            action = Intent.ACTION_SEND
-                                            type = "text/plain"
-                                            putExtra(
-                                                Intent.EXTRA_TEXT,
-                                                "https://music.youtube.com/watch?v=${mediaMetadata.id}"
-                                            )
-                                        }
-                                        context.startActivity(Intent.createChooser(intent, null))
-                                    },
-                                    shape = shareShape,
-                                    colors = IconButtonDefaults.filledIconButtonColors(
-                                        containerColor = textButtonColor,
-                                        contentColor = iconButtonColor,
-                                    ),
+                                Surface(
                                     modifier = Modifier.size(42.dp),
+                                    shape = shareShape,
+                                    color = textButtonColor,
+                                    contentColor = iconButtonColor,
+                                    tonalElevation = 0.dp,
+                                    shadowElevation = 0.dp
                                 ) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.share),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(24.dp)
-                                    )
+                                    Box(
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CastButton(
+                                            modifier = Modifier.size(24.dp),
+                                            tintColor = iconButtonColor
+                                        )
+                                    }
                                 }
+
                             }
                         }
 
@@ -997,26 +1003,12 @@ fun BottomSheetPlayer(
                                 modifier = Modifier
                                     .size(40.dp)
                                     .clip(RoundedCornerShape(24.dp))
-                                    .background(textButtonColor)
-                                    .clickable {
-                                        val intent = Intent().apply {
-                                            action = Intent.ACTION_SEND
-                                            type = "text/plain"
-                                            putExtra(
-                                                Intent.EXTRA_TEXT,
-                                                "https://music.youtube.com/watch?v=${mediaMetadata.id}"
-                                            )
-                                        }
-                                        context.startActivity(Intent.createChooser(intent, null))
-                                    },
+                                    .background(textButtonColor),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    painter = painterResource(R.drawable.share),
-                                    contentDescription = null,
-                                    tint = iconButtonColor,
-                                    modifier = Modifier
-                                        .align(Alignment.Center)
-                                        .size(24.dp),
+                                CastButton(
+                                    modifier = Modifier.size(24.dp),
+                                    tintColor = iconButtonColor
                                 )
                             }
                         }
@@ -1113,10 +1105,8 @@ fun BottomSheetPlayer(
                                 sliderPosition = null
                             },
                             modifier = Modifier.padding(horizontal = PlayerHorizontalPadding),
-                            squigglesSpec = SquigglySlider.SquigglesSpec(
-                                amplitude = if (effectiveIsPlaying) 2.dp else 0.dp,
-                                strokeWidth = 3.dp,
-                            ),
+                            colors = PlayerSliderColors.getSliderColors(textButtonColor, playerBackground, useDarkTheme),
+                            isPlaying = effectiveIsPlaying,
                         )
                     } else {
                         WavySlider(

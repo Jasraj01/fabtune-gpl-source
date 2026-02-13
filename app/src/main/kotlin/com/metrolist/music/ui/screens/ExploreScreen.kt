@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.metrolist.innertube.models.*
@@ -52,6 +53,8 @@ import com.metrolist.music.ui.component.LocalMenuState
 import com.metrolist.music.ui.component.NavigationTitle
 import com.metrolist.music.ui.component.YouTubeGridItem
 import com.metrolist.music.ui.component.YouTubeListItem
+import com.metrolist.music.ui.component.image.PrefetchImageModel
+import com.metrolist.music.ui.component.image.PrefetchNextImages
 import com.metrolist.music.ui.component.shimmer.GridItemPlaceHolder
 import com.metrolist.music.ui.component.shimmer.ShimmerHost
 import com.metrolist.music.ui.component.shimmer.TextPlaceholder
@@ -72,18 +75,22 @@ fun ExploreScreen(
     val menuState = LocalMenuState.current
     val haptic = LocalHapticFeedback.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsStateWithLifecycle()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
-    val explorePage by exploreViewModel.explorePage.collectAsState()
-    val moodAndGenres by exploreViewModel.moodAndGenresGrouped.collectAsState()
-    val moodThumbnails by exploreViewModel.moodThumbnails.collectAsState()
+    val explorePage by exploreViewModel.explorePage.collectAsStateWithLifecycle()
+    val moodAndGenres by exploreViewModel.moodAndGenresGrouped.collectAsStateWithLifecycle()
+    val moodThumbnails by exploreViewModel.moodThumbnails.collectAsStateWithLifecycle()
+    val isExploreLoading by exploreViewModel.isLoading.collectAsStateWithLifecycle()
+    val exploreError by exploreViewModel.error.collectAsStateWithLifecycle()
 
-    val chartsPage by chartsViewModel.chartsPage.collectAsState()
-    val isChartsLoading by chartsViewModel.isLoading.collectAsState()
+    val chartsPage by chartsViewModel.chartsPage.collectAsStateWithLifecycle()
+    val isChartsLoading by chartsViewModel.isLoading.collectAsStateWithLifecycle()
+    val chartsError by chartsViewModel.error.collectAsStateWithLifecycle()
 
     val coroutineScope = rememberCoroutineScope()
     val lazyListState = rememberLazyListState()
+    val topVideosRowState = rememberLazyListState()
 
     val localConfiguration = LocalConfiguration.current
     val itemsPerRow = remember(localConfiguration.orientation) {
@@ -92,7 +99,7 @@ fun ExploreScreen(
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val scrollToTop by backStackEntry?.savedStateHandle
-        ?.getStateFlow("scrollToTop", false)?.collectAsState() ?: remember { mutableStateOf(false) }
+        ?.getStateFlow("scrollToTop", false)?.collectAsStateWithLifecycle(false) ?: remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         if (chartsPage == null) {
@@ -115,6 +122,58 @@ fun ExploreScreen(
             Color(0xFF3E7F78), Color(0xFFBA5D07), Color(0xFF008069),
         )
     }
+    val chartSections = remember(chartsPage) { chartsPage?.sections.orEmpty() }
+    val chartSectionsWithoutVideos = remember(chartSections) {
+        chartSections.filter { it.title != "Top music videos" }
+    }
+    val topVideosSection = remember(chartSections) {
+        chartSections.firstOrNull { it.title == "Top music videos" }
+    }
+    val chartSongsBySection = remember(chartSectionsWithoutVideos) {
+        chartSectionsWithoutVideos.map { section ->
+            section.items.filterIsInstance<SongItem>().distinctBy { it.id }
+        }
+    }
+    val topVideoItems = remember(topVideosSection) {
+        topVideosSection?.items?.filterIsInstance<SongItem>()?.distinctBy { it.id }.orEmpty()
+    }
+    val moodsGroup = remember(moodAndGenres) {
+        moodAndGenres?.firstOrNull { it.title == "Moods & moments" }
+    }
+    val moodRows = remember(moodsGroup, itemsPerRow) {
+        moodsGroup?.items?.mapIndexed { index, item -> index to item }?.chunked(itemsPerRow).orEmpty()
+    }
+    val genresGroup = remember(moodAndGenres) {
+        moodAndGenres?.firstOrNull { it.title == "Genres" }
+    }
+    val genreRows = remember(genresGroup, itemsPerRow) {
+        genresGroup?.items?.mapIndexed { index, item -> index to item }?.chunked(itemsPerRow).orEmpty()
+    }
+    val topVideoPrefetchModels = remember(topVideoItems) {
+        topVideoItems.mapNotNull { song ->
+            song.thumbnail?.takeIf { it.isNotBlank() }?.let { url ->
+                PrefetchImageModel(
+                    stableKey = "top_video_${song.id}",
+                    url = url,
+                )
+            }
+        }
+    }
+    val exploreHasLoadedContent by remember(chartsPage, explorePage) {
+        derivedStateOf { chartsPage != null && explorePage != null }
+    }
+    val inlineErrorText by remember(chartsError, exploreError) {
+        derivedStateOf { chartsError ?: exploreError }
+    }
+    val isInitialLoading by remember(isChartsLoading, isExploreLoading, exploreHasLoadedContent) {
+        derivedStateOf { (isChartsLoading || isExploreLoading) && !exploreHasLoadedContent }
+    }
+
+    PrefetchNextImages(
+        state = topVideosRowState,
+        imageModels = topVideoPrefetchModels,
+        prefetchCount = 4,
+    )
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -123,7 +182,7 @@ fun ExploreScreen(
             // Enable overscroll for bounce effect
             flingBehavior = ScrollableDefaults.flingBehavior()
         ) {
-            item(key = "top_spacer") {
+            item(key = "top_spacer", contentType = "spacer") {
                 Spacer(
                     Modifier.height(
                         LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateTopPadding(),
@@ -131,8 +190,8 @@ fun ExploreScreen(
                 )
             }
 
-            if (isChartsLoading || chartsPage == null || explorePage == null) {
-                item(key = "loading") {
+            if (isInitialLoading) {
+                item(key = "loading", contentType = "loading") {
                     ShimmerHost {
                         TextPlaceholder(
                             height = 36.dp,
@@ -154,7 +213,11 @@ fun ExploreScreen(
                                     .height(ListItemHeight * 4),
                                 userScrollEnabled = false // Disable scroll in nested grid
                             ) {
-                                items(4) {
+                                items(
+                                    count = 4,
+                                    key = { "charts_loading_$it" },
+                                    contentType = { "loading_item" },
+                                ) {
                                     Row(
                                         modifier = Modifier
                                             .width(horizontalLazyGridItemWidth)
@@ -206,10 +269,37 @@ fun ExploreScreen(
                         }
                     }
                 }
+            } else if (!exploreHasLoadedContent) {
+                item(key = "explore_retry", contentType = "retry") {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = inlineErrorText ?: stringResource(R.string.error_no_internet),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Button(
+                                onClick = {
+                                    chartsViewModel.retry()
+                                    exploreViewModel.refresh()
+                                }
+                            ) {
+                                Text(stringResource(R.string.retry))
+                            }
+                        }
+                    }
+                }
             } else {
-                chartsPage?.sections?.filter { it.title != "Top music videos" }
-                    ?.forEachIndexed { sectionIndex, section ->
-                        item(key = "section_title_$sectionIndex") {
+                chartSectionsWithoutVideos.forEachIndexed { sectionIndex, section ->
+                        item(key = "section_title_$sectionIndex", contentType = "section_title") {
                             NavigationTitle(
                                 title = when (section.title) {
                                     "Trending" -> stringResource(R.string.trending)
@@ -218,7 +308,7 @@ fun ExploreScreen(
                             )
                         }
 
-                        item(key = "section_content_$sectionIndex") {
+                        item(key = "section_content_$sectionIndex", contentType = "chart_section") {
                             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                                 val horizontalLazyGridItemWidthFactor =
                                     if (maxWidth * 0.475f >= 320.dp) 0.475f else 0.9f
@@ -226,6 +316,17 @@ fun ExploreScreen(
                                     maxWidth * horizontalLazyGridItemWidthFactor
 
                                 val lazyGridState = rememberLazyGridState()
+                                val sectionSongs = chartSongsBySection[sectionIndex]
+                                val sectionPrefetchModels = remember(sectionSongs) {
+                                    sectionSongs.mapNotNull { song ->
+                                        song.thumbnail?.takeIf { it.isNotBlank() }?.let { url ->
+                                            PrefetchImageModel(
+                                                stableKey = "chart_song_${song.id}",
+                                                url = url,
+                                            )
+                                        }
+                                    }
+                                }
                                 val snapLayoutInfoProvider = remember(lazyGridState) {
                                     SnapLayoutInfoProvider(
                                         lazyGridState = lazyGridState,
@@ -247,9 +348,9 @@ fun ExploreScreen(
                                         .height(ListItemHeight * 4),
                                 ) {
                                     items(
-                                        items = section.items.filterIsInstance<SongItem>()
-                                            .distinctBy { it.id },
+                                        items = sectionSongs,
                                         key = { it.id },
+                                        contentType = { "song_item" },
                                     ) { song ->
                                         YouTubeListItem(
                                             item = song,
@@ -305,28 +406,34 @@ fun ExploreScreen(
                                         )
                                     }
                                 }
+
+                                PrefetchNextImages(
+                                    state = lazyGridState,
+                                    imageModels = sectionPrefetchModels,
+                                    prefetchCount = 4,
+                                )
                             }
                         }
                     }
 
-                chartsPage?.sections?.find { it.title == "Top music videos" }
-                    ?.let { topVideosSection ->
-                        item(key = "top_videos_title") {
+                topVideosSection?.let {
+                        item(key = "top_videos_title", contentType = "section_title") {
                             NavigationTitle(
                                 title = stringResource(R.string.top_music_videos),
                             )
                         }
 
-                        item(key = "top_videos_content") {
+                        item(key = "top_videos_content", contentType = "top_videos") {
                             LazyRow(
+                                state = topVideosRowState,
                                 contentPadding = WindowInsets.systemBars
                                     .only(WindowInsetsSides.Horizontal)
                                     .asPaddingValues(),
                             ) {
                                 items(
-                                    items = topVideosSection.items.filterIsInstance<SongItem>()
-                                        .distinctBy { it.id },
+                                    items = topVideoItems,
                                     key = { it.id },
+                                    contentType = { "video_item" },
                                 ) { video ->
                                     YouTubeGridItem(
                                         item = video,
@@ -365,24 +472,23 @@ fun ExploreScreen(
                         }
                     }
 
-                moodAndGenres?.firstOrNull { it.title == "Moods & moments" }?.let { moodGroup ->
-                    item(key = "moods_title") {
+                moodsGroup?.let { moodGroup ->
+                    item(key = "moods_title", contentType = "section_title") {
                         NavigationTitle(title = moodGroup.title)
                     }
 
-                    item(key = "moods_content") {
+                    item(key = "moods_content", contentType = "moods_section") {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 6.dp, vertical = 8.dp)
                         ) {
-                            moodGroup.items.chunked(itemsPerRow).forEach { rowItems ->
+                            moodRows.forEach { rowItems ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    rowItems.forEach { item ->
+                                    rowItems.forEach { (index, item) ->
                                         val key = item.endpoint.browseId + (item.endpoint.params ?: "")
-                                        val index = moodGroup.items.indexOf(item)
                                         val backgroundColor =
                                             spotifyLikeColors[index % spotifyLikeColors.size]
 
@@ -409,24 +515,23 @@ fun ExploreScreen(
                     }
                 }
 
-                moodAndGenres?.firstOrNull { it.title == "Genres" }?.let { genreGroup ->
-                    item(key = "genres_title") {
+                genresGroup?.let { genreGroup ->
+                    item(key = "genres_title", contentType = "section_title") {
                         NavigationTitle(title = genreGroup.title)
                     }
 
-                    item(key = "genres_content") {
+                    item(key = "genres_content", contentType = "genres_section") {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 6.dp, vertical = 8.dp)
                         ) {
-                            genreGroup.items.chunked(itemsPerRow).forEach { rowItems ->
+                            genreRows.forEach { rowItems ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    rowItems.forEach { item ->
+                                    rowItems.forEach { (index, item) ->
                                         val key = item.endpoint.browseId + (item.endpoint.params ?: "")
-                                        val index = genreGroup.items.indexOf(item)
                                         val backgroundColor =
                                             spotifyLikeColors[index % spotifyLikeColors.size]
 
@@ -436,7 +541,7 @@ fun ExploreScreen(
                                                 navController.navigate("youtube_browse/${item.endpoint.browseId}?params=${item.endpoint.params}")
                                             },
                                             containerColor = backgroundColor,
-                                            thumbnailUrl = moodThumbnails[key],
+//                                            thumbnailUrl = moodThumbnails[key],
                                             modifier = Modifier
                                                 .padding(6.dp)
                                                 .weight(1f)
@@ -454,7 +559,7 @@ fun ExploreScreen(
                 }
             }
 
-            item(key = "bottom_spacer") {
+            item(key = "bottom_spacer", contentType = "spacer") {
                 Spacer(
                     Modifier.height(
                         LocalPlayerAwareWindowInsets.current.asPaddingValues().calculateBottomPadding()

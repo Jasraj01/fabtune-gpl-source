@@ -1,3 +1,8 @@
+/**
+ * Metrolist Project (C) 2026
+ * Licensed under GPL-3.0 | See git history for contributors
+ */
+
 package com.metrolist.music.ui.screens.library
 
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -17,6 +22,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -66,7 +72,7 @@ import com.metrolist.music.viewmodels.LibraryArtistsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryArtistsScreen(
     navController: NavController,
@@ -75,6 +81,7 @@ fun LibraryArtistsScreen(
 ) {
     val menuState = LocalMenuState.current
     val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
     var viewType by rememberEnumPreference(ArtistViewTypeKey, LibraryViewType.GRID)
 
     var filter by rememberEnumPreference(ArtistFilterKey, ArtistFilter.LIKED)
@@ -83,8 +90,7 @@ fun LibraryArtistsScreen(
         ArtistSortType.CREATE_DATE
     )
     val (sortDescending, onSortDescendingChange) = rememberPreference(ArtistSortDescendingKey, true)
-    val gridItemSize by rememberEnumPreference(GridItemsSizeKey, GridItemSize.SMALL)
-
+    val gridItemSize by rememberEnumPreference(GridItemsSizeKey, GridItemSize.BIG)
     val (ytmSync) = rememberPreference(YtmSyncKey, true)
 
     val filterContent = @Composable {
@@ -124,7 +130,6 @@ fun LibraryArtistsScreen(
     }
 
     val artists by viewModel.allArtists.collectAsState()
-    val coroutineScope = rememberCoroutineScope()
 
     val lazyListState = rememberLazyListState()
     val lazyGridState = rememberLazyGridState()
@@ -173,7 +178,6 @@ fun LibraryArtistsScreen(
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.secondary,
             )
-
 
             IconButton(
                 onClick = {

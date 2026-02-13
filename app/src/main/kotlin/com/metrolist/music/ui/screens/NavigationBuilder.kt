@@ -69,6 +69,7 @@ import com.metrolist.music.ui.screens.settings.RomanizationSettings
 import com.metrolist.music.ui.screens.settings.PrivacySettings
 import com.metrolist.music.ui.screens.settings.SettingsScreen
 import com.metrolist.music.ui.screens.settings.StorageSettings
+import com.metrolist.music.ui.screens.settings.OpenSourceCreditsScreen
 import com.metrolist.music.ui.utils.ShowMediaInfo
 import com.metrolist.music.utils.rememberEnumPreference
 import com.metrolist.music.utils.rememberPreference
@@ -349,6 +350,12 @@ fun NavGraphBuilder.navigationBuilder(
     }
     composable("settings/about") {
         AboutScreen(navController, scrollBehavior)
+    }
+    composable("about_screen") {
+        AboutScreen(navController, scrollBehavior)
+    }
+    composable("open_source_credits") {
+        OpenSourceCreditsScreen(navController, scrollBehavior)
     }
     composable("login") {
         LoginScreen(navController)

@@ -1,34 +1,30 @@
 package com.metrolist.music.ui.screens
 
 import android.app.Application
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.*
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.metrolist.music.dataStore
-import com.revenuecat.purchases.CustomerInfo
-import com.revenuecat.purchases.Purchases
-import com.revenuecat.purchases.PurchasesError
+import com.revenuecat.purchases.*
 import com.revenuecat.purchases.interfaces.ReceiveCustomerInfoCallback
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 // ------------------------------
-// 1) DataStore Setup (Keys)
+// 1) DataStore Keys
 // ------------------------------
 object PaywallKeys {
     val INSTALL_TIME_KEY = longPreferencesKey("install_time_key")
-    val FIRST_PAYWALL_SHOWN_KEY = booleanPreferencesKey("first_paywall_shown_key")
+    val OPEN_COUNT_KEY = intPreferencesKey("open_count_key")
+    val LAST_PAYWALL_TIME_KEY = longPreferencesKey("last_paywall_time_key")
+    val PAYWALL_SHOWN_TODAY_KEY = intPreferencesKey("paywall_shown_today_key")
+    val PAYWALL_DAY_KEY = longPreferencesKey("paywall_day_key")
 }
 
 // ------------------------------
-// 2) Paywall UiState
+// 2) UI State
 // ------------------------------
 data class PaywallUiState(
     val showPaywall: Boolean = false,
@@ -36,47 +32,40 @@ data class PaywallUiState(
 )
 
 // ------------------------------
-// 3) Paywall ViewModel
+// 3) ViewModel
 // ------------------------------
 class PaywallViewModel(application: Application) : AndroidViewModel(application) {
 
     private val context get() = getApplication<Application>()
     private val dataStore = context.dataStore
 
-    private var installTime: Long = 0L
-    private var firstPaywallShown: Boolean = false
-
     private val _uiState = MutableStateFlow(PaywallUiState())
     val uiState: StateFlow<PaywallUiState> = _uiState.asStateFlow()
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            val prefs = dataStore.data.first()
-            installTime = prefs[PaywallKeys.INSTALL_TIME_KEY] ?: 0L
-            firstPaywallShown = prefs[PaywallKeys.FIRST_PAYWALL_SHOWN_KEY] ?: false
-
-            if (installTime == 0L) {
-                val now = System.currentTimeMillis()
-                saveInstallTime(now)
-                saveFirstPaywallShown(false)
-                installTime = now
-                firstPaywallShown = false
-            }
-
-            // IMPORTANT: only check subscription here
+            incrementOpenCount()
             checkSubscription()
         }
     }
 
-    private suspend fun saveInstallTime(time: Long) {
-        dataStore.edit { it[PaywallKeys.INSTALL_TIME_KEY] = time }
+    // ------------------------------
+    // App open tracking
+    // ------------------------------
+    private suspend fun incrementOpenCount() {
+        dataStore.edit { prefs ->
+            val current = prefs[PaywallKeys.OPEN_COUNT_KEY] ?: 0
+            prefs[PaywallKeys.OPEN_COUNT_KEY] = current + 1
+
+            if (!prefs.contains(PaywallKeys.INSTALL_TIME_KEY)) {
+                prefs[PaywallKeys.INSTALL_TIME_KEY] = System.currentTimeMillis()
+            }
+        }
     }
 
-    private suspend fun saveFirstPaywallShown(shown: Boolean) {
-        dataStore.edit { it[PaywallKeys.FIRST_PAYWALL_SHOWN_KEY] = shown }
-        firstPaywallShown = shown
-    }
-
+    // ------------------------------
+    // Subscription check
+    // ------------------------------
     private fun checkSubscription() {
         Purchases.sharedInstance.getCustomerInfo(object : ReceiveCustomerInfoCallback {
 
@@ -84,41 +73,92 @@ class PaywallViewModel(application: Application) : AndroidViewModel(application)
                 val isSubbed =
                     customerInfo.entitlements.active.containsKey("premium")
 
-                _uiState.update {
-                    it.copy(isSubscribed = isSubbed)
-                }
-
                 // 🔑 Re-evaluate paywall AFTER subscription is known
+                _uiState.update { it.copy(isSubscribed = isSubbed) }
                 evaluatePaywall()
             }
 
             override fun onError(error: PurchasesError) {
-                // Still evaluate with isSubscribed = false
                 evaluatePaywall()
             }
         })
     }
 
+    fun onSubscriptionStateChanged(isSubscribed: Boolean) {
+        val current = _uiState.value
+        if (current.isSubscribed == isSubscribed) return
+        _uiState.update {
+            it.copy(
+                isSubscribed = isSubscribed,
+                showPaywall = if (isSubscribed) false else it.showPaywall
+            )
+        }
+    }
+
+    // ------------------------------
+    // Core paywall logic
+    // ------------------------------
     private fun evaluatePaywall() {
-        // Premium users NEVER see paywall
+        //  Premium users NEVER see paywall
         if (_uiState.value.isSubscribed) {
             _uiState.update { it.copy(showPaywall = false) }
             return
         }
 
-        // First app open → do NOT show paywall
-        if (!firstPaywallShown) {
-            viewModelScope.launch(Dispatchers.IO) {
-                saveFirstPaywallShown(true)
-            }
-            _uiState.update { it.copy(showPaywall = false) }
-            return
-        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val prefs = dataStore.data.first()
 
-        // Second open onwards → show paywall
-        _uiState.update { it.copy(showPaywall = true) }
+            val openCount = prefs[PaywallKeys.OPEN_COUNT_KEY] ?: 0
+            if (openCount <= 2) {
+                // First 2 opens → no paywall
+                _uiState.update { it.copy(showPaywall = false) }
+                return@launch
+            }
+
+            val now = System.currentTimeMillis()
+            val lastShown = prefs[PaywallKeys.LAST_PAYWALL_TIME_KEY] ?: 0L
+
+            //  Minimum 6 hours gap
+            val minGapMillis = 6 * 60 * 60 * 1000L
+            if (lastShown != 0L && now - lastShown < minGapMillis) {
+                _uiState.update { it.copy(showPaywall = false) }
+                return@launch
+            }
+
+            //  Daily cap reset
+            val today = now / (24 * 60 * 60 * 1000L)
+            val savedDay = prefs[PaywallKeys.PAYWALL_DAY_KEY] ?: today
+            var shownToday = prefs[PaywallKeys.PAYWALL_SHOWN_TODAY_KEY] ?: 0
+
+            if (savedDay != today) {
+                shownToday = 0
+                dataStore.edit {
+                    it[PaywallKeys.PAYWALL_DAY_KEY] = today
+                    it[PaywallKeys.PAYWALL_SHOWN_TODAY_KEY] = 0
+                }
+            }
+
+            //  Max 2 per day
+            if (shownToday >= 3) {
+                _uiState.update { it.copy(showPaywall = false) }
+                return@launch
+            }
+
+            //  Random chance (50%)
+            val shouldShow = Random.nextFloat() < 0.5f
+            _uiState.update { it.copy(showPaywall = shouldShow) }
+
+            if (shouldShow) {
+                dataStore.edit {
+                    it[PaywallKeys.LAST_PAYWALL_TIME_KEY] = now
+                    it[PaywallKeys.PAYWALL_SHOWN_TODAY_KEY] = shownToday + 1
+                    it[PaywallKeys.PAYWALL_DAY_KEY] = today
+                }
+            }
+        }
     }
 
+    // Call after closing paywall
     fun markPaywallShown() {
         _uiState.update { it.copy(showPaywall = false) }
     }
