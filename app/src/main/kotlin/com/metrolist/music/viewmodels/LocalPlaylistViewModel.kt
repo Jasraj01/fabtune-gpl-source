@@ -14,6 +14,7 @@ import com.metrolist.music.extensions.toEnum
 import com.metrolist.music.utils.dataStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -76,7 +77,7 @@ constructor(
         }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val sortedSongs =
                 playlistSongs.first().sortedWith(compareBy({ it.map.position }, { it.map.id }))
             database.transaction {

@@ -1,166 +1,94 @@
 package com.metrolist.music.cast
 
 import android.content.Context
-import androidx.media3.cast.CastPlayer
-import androidx.media3.cast.SessionAvailabilityListener
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
 import com.google.android.gms.cast.framework.CastContext
-import com.google.android.gms.cast.framework.CastState
-import com.google.android.gms.cast.framework.CastStateListener
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import com.google.android.gms.tasks.Task
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.suspendCancellableCoroutine
 import timber.log.Timber
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
- * Manages Google Cast integration for the music player.
- * Handles switching between local ExoPlayer and remote CastPlayer.
+ * Process-wide CastContext manager.
+ * Provides idempotent, thread-safe lazy initialization without blocking app startup.
  */
-class CastManager(
-    private val context: Context
-) : SessionAvailabilityListener, CastStateListener {
+object CastManager {
 
+    private val initializationLock = Any()
+
+    @Volatile
     private var castContext: CastContext? = null
-    private var castPlayer: CastPlayer? = null
 
-    private val _isCasting = MutableStateFlow(false)
-    val isCasting: StateFlow<Boolean> = _isCasting.asStateFlow()
+    @Volatile
+    private var initializationDeferred: CompletableDeferred<CastContext?>? = null
 
-    private val _castState = MutableStateFlow(CastState.NO_DEVICES_AVAILABLE)
-    val castState: StateFlow<Int> = _castState.asStateFlow()
-
-    private var onCastSessionStarted: ((CastPlayer) -> Unit)? = null
-    private var onCastSessionEnded: (() -> Unit)? = null
-
-    /**
-     * Initialize the Cast context. Should be called when the activity is created.
-     * This is safe to call even if Google Play Services is not available.
-     */
-    @Suppress("DEPRECATION")
-    fun initialize() {
-        try {
-            castContext = CastContext.getSharedInstance(context)
-            castContext?.addCastStateListener(this)
-
-            // Using deprecated constructor and setSessionAvailabilityListener as the new
-            // CastPlayer.Builder API requires a local player which we don't use in this architecture
-            castPlayer = CastPlayer(castContext!!)
-            castPlayer?.setSessionAvailabilityListener(this)
-
-            _castState.value = castContext?.castState ?: CastState.NO_DEVICES_AVAILABLE
-
-            Timber.d("CastManager initialized successfully")
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to initialize CastManager - Cast may not be available on this device")
-            castContext = null
-            castPlayer = null
+    private val initializationExecutor: ExecutorService by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "CastContextInit").apply {
+                isDaemon = true
+                priority = Thread.NORM_PRIORITY
+            }
         }
     }
 
-    /**
-     * Set callbacks for cast session events.
-     */
-    fun setSessionCallbacks(
-        onStarted: (CastPlayer) -> Unit,
-        onEnded: () -> Unit
-    ) {
-        onCastSessionStarted = onStarted
-        onCastSessionEnded = onEnded
-    }
+    fun peek(): CastContext? = castContext
 
-    /**
-     * Get the CastPlayer instance if available.
-     */
-    fun getCastPlayer(): CastPlayer? = castPlayer
+    suspend fun getOrInitialize(context: Context): CastContext? {
+        castContext?.let { return it }
 
-    /**
-     * Check if casting is currently active.
-     */
-    @Suppress("DEPRECATION")
-    fun isCastSessionAvailable(): Boolean = castPlayer?.isCastSessionAvailable == true
-
-    /**
-     * Get the current playback position from the cast player.
-     */
-    fun getCurrentPosition(): Long = castPlayer?.currentPosition ?: 0
-
-    /**
-     * Get whether the cast player is currently playing.
-     */
-    fun isPlaying(): Boolean = castPlayer?.isPlaying == true
-
-    /**
-     * Load media items into the cast player.
-     */
-    fun loadMediaItems(
-        mediaItems: List<MediaItem>,
-        startIndex: Int = 0,
-        startPositionMs: Long = 0
-    ) {
-        castPlayer?.let { player ->
-            player.setMediaItems(mediaItems, startIndex, startPositionMs)
-            player.prepare()
-            player.play()
+        val (deferred, shouldInitialize) = synchronized(initializationLock) {
+            castContext?.let { return it }
+            initializationDeferred?.let { existing ->
+                existing to false
+            } ?: run {
+                val created = CompletableDeferred<CastContext?>()
+                initializationDeferred = created
+                created to true
+            }
         }
-    }
 
-    /**
-     * Add a listener to the cast player.
-     */
-    fun addListener(listener: Player.Listener) {
-        castPlayer?.addListener(listener)
-    }
+        if (shouldInitialize) {
+            val resolved = runCatching {
+                requestCastContext(context.applicationContext)
+            }.onFailure { error ->
+                Timber.e(error, "CastContext async initialization failed")
+            }.getOrNull()
 
-    /**
-     * Remove a listener from the cast player.
-     */
-    fun removeListener(listener: Player.Listener) {
-        castPlayer?.removeListener(listener)
-    }
-
-    override fun onCastStateChanged(state: Int) {
-        _castState.value = state
-        Timber.d("Cast state changed: $state")
-    }
-
-    override fun onCastSessionAvailable() {
-        _isCasting.value = true
-        castPlayer?.let { player ->
-            onCastSessionStarted?.invoke(player)
+            synchronized(initializationLock) {
+                if (resolved != null) {
+                    castContext = resolved
+                }
+                if (!deferred.isCompleted) {
+                    deferred.complete(resolved)
+                }
+                if (initializationDeferred === deferred) {
+                    initializationDeferred = null
+                }
+            }
         }
-        Timber.d("Cast session available")
+
+        return deferred.await()
     }
 
-    override fun onCastSessionUnavailable() {
-        _isCasting.value = false
-        onCastSessionEnded?.invoke()
-        Timber.d("Cast session unavailable")
+    private suspend fun requestCastContext(context: Context): CastContext {
+        return awaitTask(CastContext.getSharedInstance(context, initializationExecutor))
     }
 
-    /**
-     * Release resources. Should be called when the service is destroyed.
-     */
-    @Suppress("DEPRECATION")
-    fun release() {
-        castContext?.removeCastStateListener(this)
-        castPlayer?.setSessionAvailabilityListener(null)
-        castPlayer?.release()
-        castPlayer = null
-        castContext = null
-    }
-
-    companion object {
-        /**
-         * Check if Cast is available on this device.
-         */
-        fun isCastAvailable(context: Context): Boolean {
-            return try {
-                CastContext.getSharedInstance(context)
-                true
-            } catch (e: Exception) {
-                Timber.d("Cast not available: ${e.message}")
-                false
+    private suspend fun awaitTask(task: Task<CastContext>): CastContext {
+        return suspendCancellableCoroutine { continuation ->
+            task.addOnSuccessListener { value ->
+                if (continuation.isActive) {
+                    continuation.resume(value)
+                }
+            }.addOnFailureListener { error ->
+                if (continuation.isActive) {
+                    continuation.resumeWithException(error)
+                }
+            }.addOnCanceledListener {
+                continuation.cancel()
             }
         }
     }

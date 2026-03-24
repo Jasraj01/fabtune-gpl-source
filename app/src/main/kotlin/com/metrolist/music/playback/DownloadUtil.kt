@@ -178,7 +178,8 @@ constructor(
         downloads.value = result
     }
 
-    fun getDownload(songId: String): Flow<Download?> = downloads.map { it[songId] }
+    fun getDownload(songId: String): Flow<Download?> =
+        downloads.map { it[songId] }.distinctUntilChanged()
 
     fun release() {
         scope.cancel()

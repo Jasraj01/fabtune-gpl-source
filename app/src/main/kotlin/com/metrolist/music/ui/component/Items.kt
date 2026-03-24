@@ -54,7 +54,6 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableFloatStateOf
@@ -84,6 +83,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastForEachIndexed
 import androidx.compose.ui.zIndex
 import androidx.core.graphics.drawable.toBitmapOrNull
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.offline.Download
 import androidx.media3.exoplayer.offline.Download.STATE_COMPLETED
@@ -357,7 +357,7 @@ fun SongListItem(
         }
         if (showDownloadIcon) {
             val download by LocalDownloadUtil.current.getDownload(song.id)
-                .collectAsState(initial = null)
+                .collectAsStateWithLifecycle(initialValue = null)
             Icon.Download(download?.state)
         }
     },
@@ -384,6 +384,9 @@ fun SongListItem(
                     isSelected = isSelected,
                     isActive = isActive,
                     isPlaying = isPlaying,
+                    placeholderResId = R.drawable.cover,
+                    thumbnailSizePx = 144,
+                    mediumSizePx = 320,
                     shape = RoundedCornerShape(ThumbnailCornerRadius),
                     modifier = Modifier.size(ListThumbnailSize)
                 )
@@ -422,7 +425,7 @@ fun SongGridItem(
             Icon.Library()
         }
         if (showDownloadIcon) {
-            val download by LocalDownloadUtil.current.getDownload(song.id).collectAsState(initial = null)
+            val download by LocalDownloadUtil.current.getDownload(song.id).collectAsStateWithLifecycle(initialValue = null)
             Icon.Download(download?.state)
         }
     },
@@ -459,6 +462,9 @@ fun SongGridItem(
             thumbnailUrl = song.song.thumbnailUrl,
             isActive = isActive,
             isPlaying = isPlaying,
+            placeholderResId = R.drawable.cover,
+            thumbnailSizePx = 192,
+            mediumSizePx = 512,
             shape = RoundedCornerShape(ThumbnailCornerRadius),
             modifier = Modifier.size(gridHeight)
         )
@@ -500,9 +506,9 @@ fun ArtistListItem(
                 url = artist.artist.thumbnailUrl,
             ),
             contentDescription = null,
-            placeholderResId = R.drawable.artist,
-            errorResId = R.drawable.artist,
-            fallbackResId = R.drawable.artist,
+            placeholderResId = R.drawable.home_artist,
+            errorResId = R.drawable.home_artist,
+            fallbackResId = R.drawable.home_artist,
             thumbnailSizePx = 96,
             mediumSizePx = 220,
             modifier = Modifier
@@ -535,9 +541,9 @@ fun ArtistGridItem(
                 url = artist.artist.thumbnailUrl,
             ),
             contentDescription = null,
-            placeholderResId = R.drawable.artist,
-            errorResId = R.drawable.artist,
-            fallbackResId = R.drawable.artist,
+            placeholderResId = R.drawable.home_artist,
+            errorResId = R.drawable.home_artist,
+            fallbackResId = R.drawable.home_artist,
             contentScale = ContentScale.Crop,
             thumbnailSizePx = 144,
             mediumSizePx = 640,
@@ -566,7 +572,7 @@ fun AlbumListItem(
             }
         }
 
-        val allDownloads by downloadUtil.downloads.collectAsState()
+        val allDownloads by downloadUtil.downloads.collectAsStateWithLifecycle()
 
         val downloadState =
             if (songs.isEmpty()) {
@@ -606,6 +612,9 @@ fun AlbumListItem(
             thumbnailUrl = album.album.thumbnailUrl,
             isActive = isActive,
             isPlaying = isPlaying,
+            placeholderResId = R.drawable.home_album,
+            thumbnailSizePx = 144,
+            mediumSizePx = 320,
             shape = RoundedCornerShape(ThumbnailCornerRadius),
             modifier = Modifier.size(ListThumbnailSize)
         )
@@ -629,7 +638,7 @@ fun AlbumGridItem(
             }
         }
 
-        val allDownloads by downloadUtil.downloads.collectAsState()
+        val allDownloads by downloadUtil.downloads.collectAsStateWithLifecycle()
 
         val downloadState =
             if (songs.isEmpty()) {
@@ -686,6 +695,9 @@ fun AlbumGridItem(
             thumbnailUrl = album.album.thumbnailUrl,
             isActive = isActive,
             isPlaying = isPlaying,
+            placeholderResId = R.drawable.home_album,
+            thumbnailSizePx = 192,
+            mediumSizePx = 512,
             shape = RoundedCornerShape(ThumbnailCornerRadius),
         )
 
@@ -722,7 +734,7 @@ fun PlaylistListItem(
             }
         }
 
-        val allDownloads by downloadUtil.downloads.collectAsState()
+        val allDownloads by downloadUtil.downloads.collectAsStateWithLifecycle()
 
         val downloadState =
             if (songs.isEmpty()) {
@@ -770,7 +782,7 @@ fun PlaylistListItem(
                     stringResource(R.string.liked) -> R.drawable.favorite_border
                     stringResource(R.string.offline) -> R.drawable.offline
                     stringResource(R.string.cached_playlist) -> R.drawable.cached
-                    else -> if (autoPlaylist) R.drawable.trending_up else R.drawable.queue_music
+                    else -> if (autoPlaylist) R.drawable.trending_up else R.drawable.home_playlist
                 }
                 Icon(
                     painter = painterResource(painter),
@@ -802,7 +814,7 @@ fun PlaylistGridItem(
             }
         }
 
-        val allDownloads by downloadUtil.downloads.collectAsState()
+        val allDownloads by downloadUtil.downloads.collectAsStateWithLifecycle()
 
         val downloadState =
             if (songs.isEmpty()) {
@@ -869,7 +881,7 @@ fun PlaylistGridItem(
                     stringResource(R.string.liked) -> R.drawable.favorite_border
                     stringResource(R.string.offline) -> R.drawable.offline
                     stringResource(R.string.cached_playlist) -> R.drawable.cached
-                    else -> if (autoPlaylist) R.drawable.trending_up else R.drawable.queue_music
+                    else -> if (autoPlaylist) R.drawable.trending_up else R.drawable.home_playlist
                 }
                 Box(
                     contentAlignment = Alignment.Center,
@@ -900,6 +912,7 @@ fun MediaMetadataListItem(
     isPlaying: Boolean = false,
     trailingContent: @Composable RowScope.() -> Unit = {},
 ) {
+    val isVideoThumbnail = mediaMetadata.isVideoSong
     ListItem(
         title = mediaMetadata.title,
         subtitle = joinByBullet(
@@ -914,7 +927,11 @@ fun MediaMetadataListItem(
                 isSelected = isSelected,
                 isActive = isActive,
                 isPlaying = isPlaying,
-                shape = RoundedCornerShape(ThumbnailCornerRadius),
+                placeholderResId = R.drawable.cover,
+                thumbnailRatio = if (isVideoThumbnail) 16f / 9f else 1f,
+                thumbnailSizePx = 144,
+                mediumSizePx = 320,
+                shape = RoundedCornerShape(if (isVideoThumbnail) 6.dp else ThumbnailCornerRadius),
                 modifier = Modifier.size(ListThumbnailSize)
             )
         },
@@ -954,11 +971,12 @@ fun YouTubeListItem(
 //            Icon.Library()
 //        }
         if (item is SongItem) {
-            val download by LocalDownloadUtil.current.getDownload(item.id).collectAsState(null)
+            val download by LocalDownloadUtil.current.getDownload(item.id).collectAsStateWithLifecycle(initialValue = null)
             Icon.Download(download?.state)
         }
     },
 ) {
+    val isVideoThumbnail = item is SongItem && item.isVideoSong
     val swipeEnabled by rememberPreference(SwipeToSongKey, defaultValue = false)
 
     val content: @Composable () -> Unit = {
@@ -978,7 +996,20 @@ fun YouTubeListItem(
                     isSelected = isSelected,
                     isActive = isActive,
                     isPlaying = isPlaying,
-                    shape = if (item is ArtistItem) CircleShape else RoundedCornerShape(ThumbnailCornerRadius),
+                    placeholderResId = when (item) {
+                        is SongItem -> R.drawable.cover
+                        is ArtistItem -> R.drawable.home_artist
+                        is AlbumItem -> R.drawable.home_album
+                        is PlaylistItem -> R.drawable.home_playlist
+                    },
+                    thumbnailRatio = if (isVideoThumbnail) 16f / 9f else 1f,
+                    thumbnailSizePx = 144,
+                    mediumSizePx = 320,
+                    shape = when {
+                        item is ArtistItem -> CircleShape
+                        isVideoThumbnail -> RoundedCornerShape(6.dp)
+                        else -> RoundedCornerShape(ThumbnailCornerRadius)
+                    },
                     modifier = Modifier.size(ListThumbnailSize)
                 )
             },
@@ -1022,11 +1053,11 @@ fun YouTubeGridItem(
         if (item.explicit) Icon.Explicit()
 //        if (item is SongItem && song?.song?.inLibrary != null) Icon.Library()
         if (item is SongItem) {
-            val download by LocalDownloadUtil.current.getDownload(item.id).collectAsState(null)
+            val download by LocalDownloadUtil.current.getDownload(item.id).collectAsStateWithLifecycle(initialValue = null)
             Icon.Download(download?.state)
         }
     },
-    thumbnailRatio: Float = if (item is SongItem) 16f / 9 else 1f,
+    thumbnailRatio: Float = if (item is SongItem && item.isVideoSong) 16f / 9 else 1f,
     isActive: Boolean = false,
     isPlaying: Boolean = false,
     fillMaxWidth: Boolean = false,
@@ -1069,6 +1100,14 @@ fun YouTubeGridItem(
             thumbnailUrl = item.thumbnail,
             isActive = isActive,
             isPlaying = isPlaying,
+            placeholderResId = when (item) {
+                is SongItem -> R.drawable.cover
+                is ArtistItem -> R.drawable.home_artist
+                is AlbumItem -> R.drawable.home_album
+                is PlaylistItem -> R.drawable.home_playlist
+            },
+            thumbnailSizePx = 192,
+            mediumSizePx = 512,
             shape = if (item is ArtistItem) CircleShape else RoundedCornerShape(ThumbnailCornerRadius),
         )
 
@@ -1199,7 +1238,12 @@ fun ItemThumbnail(
     modifier: Modifier = Modifier,
     albumIndex: Int? = null,
     isSelected: Boolean = false,
-    thumbnailRatio: Float = 1f
+    thumbnailRatio: Float = 1f,
+    placeholderResId: Int = R.drawable.album_search,
+    errorResId: Int = placeholderResId,
+    fallbackResId: Int = placeholderResId,
+    thumbnailSizePx: Int = 144,
+    mediumSizePx: Int = 320,
 ) {
     Box(
         contentAlignment = Alignment.Center,
@@ -1215,11 +1259,11 @@ fun ItemThumbnail(
                     url = thumbnailUrl,
                 ),
                 contentDescription = null,
-                placeholderResId = R.drawable.album_search,
-                errorResId = R.drawable.album_search,
-                fallbackResId = R.drawable.album_search,
-                thumbnailSizePx = 144,
-                mediumSizePx = 640,
+                placeholderResId = placeholderResId,
+                errorResId = errorResId,
+                fallbackResId = fallbackResId,
+                thumbnailSizePx = thumbnailSizePx,
+                mediumSizePx = mediumSizePx,
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(shape)
@@ -1408,8 +1452,8 @@ fun PlaylistThumbnail(
                 .build(),
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            placeholder = painterResource(R.drawable.queue_music),
-            error = painterResource(R.drawable.queue_music),
+            placeholder = painterResource(R.drawable.home_playlist),
+            error = painterResource(R.drawable.home_playlist),
             modifier = Modifier
                 .size(size)
                 .clip(shape)
@@ -1436,8 +1480,8 @@ fun PlaylistThumbnail(
                         .build(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    placeholder = painterResource(R.drawable.queue_music),
-                    error = painterResource(R.drawable.queue_music),
+                    placeholder = painterResource(R.drawable.home_playlist),
+                    error = painterResource(R.drawable.home_playlist),
                     modifier = Modifier
                         .align(alignment)
                         .size(size / 2)

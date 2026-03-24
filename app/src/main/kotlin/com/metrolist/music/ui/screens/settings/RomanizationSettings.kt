@@ -54,9 +54,12 @@ fun RomanizationSettings(
 ) {
     val context = LocalContext.current
 
+    val (lyricsRomanizeAsMain, onLyricsRomanizeAsMainChange) = rememberPreference(LyricsRomanizeAsMainKey, defaultValue = false)
     val (lyricsRomanizeJapanese, onLyricsRomanizeJapaneseChange) = rememberPreference(LyricsRomanizeJapaneseKey, defaultValue = true)
     val (lyricsRomanizeKorean, onLyricsRomanizeKoreanChange) = rememberPreference(LyricsRomanizeKoreanKey, defaultValue = true)
     val (lyricsRomanizeChinese, onLyricsRomanizeChineseChange) = rememberPreference(LyricsRomanizeChineseKey, defaultValue = true)
+    val (lyricsRomanizeHindi, onLyricsRomanizeHindiChange) = rememberPreference(LyricsRomanizeHindiKey, defaultValue = true)
+    val (lyricsRomanizePunjabi, onLyricsRomanizePunjabiChange) = rememberPreference(LyricsRomanizePunjabiKey, defaultValue = true)
     val (lyricsRomanizeRussian, onLyricsRomanizeRussianChange) = rememberPreference(LyricsRomanizeRussianKey, defaultValue = true)
     val (lyricsRomanizeUkrainian, onLyricsRomanizeUkrainianChange) = rememberPreference(LyricsRomanizeUkrainianKey, defaultValue = true)
     val (lyricsRomanizeSerbian, onLyricsRomanizeSerbianChange) = rememberPreference(LyricsRomanizeSerbianKey, defaultValue = true)
@@ -73,6 +76,13 @@ fun RomanizationSettings(
             .verticalScroll(rememberScrollState()),
     ) {
         PreferenceGroupTitle(title = stringResource(R.string.general))
+
+        SwitchPreference(
+            title = { Text(stringResource(R.string.lyrics_romanize_as_main)) },
+            icon = { Icon(painterResource(R.drawable.lyrics), null) },
+            checked = lyricsRomanizeAsMain,
+            onCheckedChange = onLyricsRomanizeAsMainChange,
+        )
 
         SwitchPreference(
             title = { Text(stringResource(R.string.lyrics_romanize_japanese)) },
@@ -93,6 +103,20 @@ fun RomanizationSettings(
             icon = { Icon(painterResource(R.drawable.language), null) },
             checked = lyricsRomanizeChinese,
             onCheckedChange = onLyricsRomanizeChineseChange,
+        )
+
+        SwitchPreference(
+            title = { Text(stringResource(R.string.lyrics_romanize_hindi)) },
+            icon = { Icon(painterResource(R.drawable.language), null) },
+            checked = lyricsRomanizeHindi,
+            onCheckedChange = onLyricsRomanizeHindiChange,
+        )
+
+        SwitchPreference(
+            title = { Text(stringResource(R.string.lyrics_romanize_punjabi)) },
+            icon = { Icon(painterResource(R.drawable.language), null) },
+            checked = lyricsRomanizePunjabi,
+            onCheckedChange = onLyricsRomanizePunjabiChange,
         )
 
         PreferenceGroupTitle(title = stringResource(R.string.lyrics_romanization_cyrillic))

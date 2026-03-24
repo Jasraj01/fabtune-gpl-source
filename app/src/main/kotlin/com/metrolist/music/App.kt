@@ -25,6 +25,7 @@ import com.metrolist.music.extensions.toEnum
 import com.metrolist.music.extensions.toInetSocketAddress
 import com.metrolist.music.utils.dataStore
 import com.metrolist.music.utils.CrashHandler
+import com.metrolist.music.utils.cipher.CipherDeobfuscator
 import com.metrolist.music.utils.peek
 import com.metrolist.music.utils.reportException
 import com.metrolist.music.utils.warmupCache
@@ -56,18 +57,23 @@ class App : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
 
-        val apiKey = "REVENUECAT_PUBLIC_API_KEY"
+        // Install crash handler first
+        CrashHandler.install(this)
+        CipherDeobfuscator.initialize(this)
+
         Purchases.configure(
             PurchasesConfiguration.Builder(this, apiKey)
                 .build()
         )
 
-        Timber.plant(Timber.DebugTree())
+        if (BuildConfig.DEBUG) {
+            Timber.plant(Timber.DebugTree())
+        }
 
         // Warm DataStore snapshot cache early to avoid first-read stalls on the main thread.
         dataStore.warmupCache()
 
-        applicationScope.launch {
+        applicationScope.launch(Dispatchers.IO) {
             initializeSettings()
             observeSettingsChanges()
         }

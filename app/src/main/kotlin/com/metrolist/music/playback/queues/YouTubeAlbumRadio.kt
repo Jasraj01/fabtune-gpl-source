@@ -15,8 +15,7 @@ class YouTubeAlbumRadio(
 
     private val endpoint: WatchEndpoint
         get() = WatchEndpoint(
-            playlistId = playlistId,
-            params = "wAEB"
+            playlistId = playlistId
         )
 
     private var albumSongCount = 0

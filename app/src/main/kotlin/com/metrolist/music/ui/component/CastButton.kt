@@ -33,7 +33,6 @@ import androidx.compose.ui.unit.dp
 import androidx.mediarouter.media.MediaRouteSelector
 import androidx.mediarouter.media.MediaRouter
 import com.google.android.gms.cast.CastMediaControlIntent
-import com.google.android.gms.cast.framework.CastContext
 import com.metrolist.music.LocalPlayerConnection
 import com.metrolist.music.R
 import com.metrolist.music.constants.EnableGoogleCastKey
@@ -91,13 +90,10 @@ fun CastButton(
             return@LaunchedEffect
         }
         try {
-            CastContext.getSharedInstance(context)
             mediaRouter = MediaRouter.getInstance(context)
             routeSelector = MediaRouteSelector.Builder()
                 .addControlCategory(CastMediaControlIntent.categoryForCast(CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID))
                 .build()
-            // Reinitialize the Cast handler to ensure it's ready
-            playerConnection?.service?.castConnectionHandler?.initialize()
             castAvailable = true
         } catch (e: Exception) {
             Timber.d("Cast not available: ${e.message}")
@@ -164,6 +160,9 @@ fun CastButton(
                             Toast.makeText(context, "Play a song first to cast", Toast.LENGTH_SHORT).show()
                             return@clickable
                         }
+
+                        // CastContext is initialized lazily and asynchronously only on user action.
+                        castHandler?.initialize()
 
                         // Get current connected route if casting
                         val currentRoute = if (isCasting) {

@@ -6,14 +6,20 @@
 package com.metrolist.music.ui.player
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -80,9 +86,13 @@ import com.metrolist.music.constants.SeekExtraSeconds
 import com.metrolist.music.constants.SwipeThumbnailKey
 import com.metrolist.music.constants.ThumbnailCornerRadius
 //import com.metrolist.music.constants.HidePlayerThumbnailKey
+import com.metrolist.music.extensions.metadata
 import com.metrolist.music.ui.component.CastButton
+import com.metrolist.music.ui.screens.LocalIsSubscribed
+import com.metrolist.music.ui.utils.resize
 import com.metrolist.music.utils.rememberEnumPreference
 import com.metrolist.music.utils.rememberPreference
+// ✅ NEW: Import for subscription check
 import com.revenuecat.purchases.CustomerInfo
 import com.revenuecat.purchases.Purchases
 import com.revenuecat.purchases.PurchasesError
@@ -209,27 +219,12 @@ fun Thumbnail(
 
     val adViewModel = viewModel<AdViewModel>()
 
-    // ✅ NEW: Check subscription status
-    val subscriptionState = remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        Purchases.sharedInstance.getCustomerInfo(object : ReceiveCustomerInfoCallback {
-            override fun onReceived(customerInfo: CustomerInfo) {
-                subscriptionState.value = customerInfo.entitlements.active.containsKey("premium")
-            }
-            override fun onError(error: PurchasesError) {
-                subscriptionState.value = false
-            }
-        })
-    }
-    val isSubscribed = subscriptionState.value
+    val isSubscribed = LocalIsSubscribed.current
 
-    val adFullyLoaded by remember {
-        derivedStateOf { adViewModel.adFullyLoaded }
-    }
-
-    val loadedAdMediaId by remember {
-        derivedStateOf { adViewModel.loadedAdMediaId }
-    }
+    // Read ViewModel state directly — mutableStateOf is already observable by
+    // Compose. derivedStateOf wrapping adds overhead for no benefit here.
+    val adFullyLoaded = adViewModel.adFullyLoaded
+    val loadedAdMediaId = adViewModel.loadedAdMediaId
 
     val playerConnection = LocalPlayerConnection.current ?: return
     val context = LocalContext.current
@@ -267,6 +262,7 @@ fun Thumbnail(
     val mediaItems = mediaItemsData.items
     val currentMediaIndex = mediaItemsData.currentIndex
 
+    // ✅ FIX #2: Initialize grid state with current media index
     val thumbnailLazyGridState = rememberLazyGridState(
         initialFirstVisibleItemIndex = if (currentMediaIndex >= 0) currentMediaIndex else 0
     )
@@ -286,6 +282,7 @@ fun Thumbnail(
     val currentItem by remember { derivedStateOf { thumbnailLazyGridState.firstVisibleItemIndex } }
     val itemScrollOffset by remember { derivedStateOf { thumbnailLazyGridState.firstVisibleItemScrollOffset } }
 
+    // ✅ FIX #2b: Ensure grid scrolls to correct position when media items are ready
     LaunchedEffect(mediaItems.size, currentMediaIndex) {
         if (mediaItems.isNotEmpty() && currentMediaIndex >= 0 && currentMediaIndex < mediaItems.size) {
             if (thumbnailLazyGridState.firstVisibleItemIndex != currentMediaIndex) {
@@ -442,6 +439,7 @@ fun Thumbnail(
                                 adFullyLoaded = adFullyLoaded,
                                 loadedAdMediaId = loadedAdMediaId,
                                 adViewModel = adViewModel,
+                                // ✅ NEW: Pass subscription status
                                 isSubscribed = isSubscribed
                             )
                         }
@@ -530,6 +528,7 @@ private fun ThumbnailItem(
     adFullyLoaded: Boolean,
     loadedAdMediaId: String?,
     adViewModel: AdViewModel,
+    // ✅ NEW: Added subscription parameter
     isSubscribed: Boolean
 ) {
     val incrementalSeekSkipEnabled by rememberPreference(SeekExtraSeconds, defaultValue = false)
@@ -588,30 +587,53 @@ private fun ThumbnailItem(
                 .size(dimensions.thumbnailSize)
                 .clip(RoundedCornerShape(dimensions.cornerRadius))
         ) {
-            //  FIX: Thumbnail visibility logic
-            // If subscribed, always show thumbnail (no ads)
-            // If not subscribed, hide thumbnail when ad is fully loaded
-            val shouldShowThumbnail = when {
-                isSubscribed -> true  //  Always show thumbnail for subscribed users
-                !isPlayerExpanded -> true
-                !isCurrent -> true
-                !(adFullyLoaded && loadedAdMediaId == item.mediaId) -> true
-                else -> false
-            }
 
-            // Thumbnail layer
+            // ---------------------------------------------------------------------------
+            // CHANGED: Thumbnail is now ALWAYS visible - no crossfade
+            // Ad appears on top of the thumbnail with slide-in animation
+            // ---------------------------------------------------------------------------
+            val isVideoThumbnail = item.metadata?.isVideoSong == true
+            ThumbnailImage(
+                artworkUri = item.mediaMetadata.artworkUri?.toString(),
+                isVideoThumbnail = isVideoThumbnail
+            )
+
+
+            val shouldShowAd = isCurrent && isPlayerExpanded && !isSubscribed
+
             AnimatedVisibility(
-                visible = shouldShowThumbnail,
-                enter = fadeIn(),
-                exit = fadeOut()
+                visible = shouldShowAd,
+                enter = fadeIn(
+                    animationSpec = tween(
+                        durationMillis = 300,
+                        easing = FastOutSlowInEasing
+                    )
+                ) + slideInVertically(
+                    initialOffsetY = { it / 12 }, // very subtle movement
+                    animationSpec = tween(
+                        durationMillis = 360,
+                        easing = FastOutSlowInEasing
+                    )
+                ),
+                exit = fadeOut(
+                    animationSpec = tween(
+                        durationMillis = 180,
+                        easing = FastOutSlowInEasing
+                    )
+                ) + slideOutVertically(
+                    targetOffsetY = { it / 14 },
+                    animationSpec = tween(
+                        durationMillis = 220,
+                        easing = FastOutSlowInEasing
+                    )
+                ),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        // Hardware layer for smooth 60–120Hz animation
+                        compositingStrategy = CompositingStrategy.Offscreen
+                    }
             ) {
-                ThumbnailImage(
-                    artworkUri = item.mediaMetadata.artworkUri?.toString()
-                )
-            }
-
-            //  FIX: Ad only shows for non-subscribed users
-            if (isCurrent && isPlayerExpanded && !isSubscribed) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -622,7 +644,7 @@ private fun ThumbnailItem(
                         mediaId = item.mediaId,
                         onAdClosed = {},
                         onAdOpened = {},
-                        isSubscribed = isSubscribed  //  Pass subscription status
+                        isSubscribed = isSubscribed
                     )
                 }
             }
@@ -668,8 +690,28 @@ private fun HiddenThumbnailPlaceholder(
 @Composable
 private fun ThumbnailImage(
     artworkUri: String?,
+    isVideoThumbnail: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val thumbnailUrl = remember(artworkUri, isVideoThumbnail) {
+        artworkUri?.let { url ->
+            if (isVideoThumbnail) {
+                url.resize(width = 1280)
+            } else {
+                url.resize(544, 544)
+            }
+        }
+    }
+
+    val imageModifier = if (isVideoThumbnail) {
+        Modifier
+            .fillMaxWidth()
+            .aspectRatio(16f / 9f)
+            .clip(RoundedCornerShape(6.dp))
+    } else {
+        Modifier.fillMaxSize()
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -677,18 +719,24 @@ private fun ThumbnailImage(
                 // Use offscreen compositing for hardware acceleration during animations
                 compositingStrategy = CompositingStrategy.Offscreen
             }
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .background(
+                if (isVideoThumbnail) Color.Transparent else MaterialTheme.colorScheme.surfaceVariant
+            )
     ) {
         AsyncImage(
             model = ImageRequest.Builder(LocalContext.current)
-                .data(artworkUri)
+                .data(thumbnailUrl)
                 .memoryCachePolicy(CachePolicy.ENABLED)
                 .diskCachePolicy(CachePolicy.ENABLED)
                 .networkCachePolicy(CachePolicy.ENABLED)
                 .build(),
             contentDescription = null,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize()
+            contentScale = if (isVideoThumbnail) ContentScale.Crop else ContentScale.Fit,
+            modifier = if (isVideoThumbnail) {
+                imageModifier.align(Alignment.Center)
+            } else {
+                imageModifier
+            }
         )
     }
 }

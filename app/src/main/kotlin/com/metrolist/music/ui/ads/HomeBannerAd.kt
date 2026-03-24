@@ -11,10 +11,9 @@ import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
 
 @Composable
-fun SmallBannerAd(
+fun MediumRectangleAd(
     modifier: Modifier = Modifier,
-    adUnitId: String = "ca-app-pub-XXXXXXXXXXXXXXXX",
-    onAdLoadedOnce: () -> Unit
+    adUnitId: String
 ) {
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -22,26 +21,18 @@ fun SmallBannerAd(
     // Create AdView once
     val adView = remember(adUnitId) {
         AdView(context).apply {
-            setAdSize(AdSize.BANNER)
+            setAdSize(AdSize.MEDIUM_RECTANGLE) // 300x250
             this.adUnitId = adUnitId
-
-            adListener = object : com.google.android.gms.ads.AdListener() {
-                override fun onAdLoaded() {
-                    onAdLoadedOnce()
-                }
-            }
-
             loadAd(AdRequest.Builder().build())
         }
     }
 
     // Handle lifecycle properly (AdMob requirement)
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, adView) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> adView.resume()
                 Lifecycle.Event.ON_PAUSE -> adView.pause()
-                Lifecycle.Event.ON_DESTROY -> adView.destroy()
                 else -> Unit
             }
         }
@@ -50,6 +41,7 @@ fun SmallBannerAd(
 
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            adView.destroy() // IMPORTANT: Always destroy when leaving composition
         }
     }
 

@@ -9,6 +9,7 @@ import com.metrolist.music.ui.screens.OptionStats
 import com.metrolist.music.utils.reportException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
@@ -130,7 +131,7 @@ constructor(
             .stateIn(viewModelScope, SharingStarted.Lazily, null)
 
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             mostPlayedArtists.collect { artists ->
                 artists
                     .map { it.artist }
@@ -148,7 +149,7 @@ constructor(
                     }
             }
         }
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             mostPlayedAlbums.collect { albums ->
                 albums
                     .filter {

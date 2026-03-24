@@ -10,6 +10,7 @@ import com.metrolist.innertube.utils.completed
 import com.metrolist.music.utils.reportException
 import com.metrolist.music.ui.utils.resize
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -28,7 +29,7 @@ class AccountViewModel @Inject constructor() : ViewModel() {
     val selectedContentType = MutableStateFlow(AccountContentType.PLAYLISTS)
 
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             YouTube.library("FEmusic_liked_playlists").completed().onSuccess {
                 playlists.value = it.items.filterIsInstance<PlaylistItem>()
                     .filterNot { it.id == "SE" }

@@ -14,6 +14,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavController
+import com.metrolist.music.constants.AlbumFilter
+import com.metrolist.music.constants.AlbumFilterKey
+import com.metrolist.music.constants.ArtistFilter
+import com.metrolist.music.constants.ArtistFilterKey
 import com.metrolist.music.R
 import com.metrolist.music.constants.ChipSortTypeKey
 import com.metrolist.music.constants.LibraryFilter
@@ -23,6 +27,8 @@ import com.metrolist.music.utils.rememberEnumPreference
 @Composable
 fun LibraryScreen(navController: NavController) {
     var filterType by rememberEnumPreference(ChipSortTypeKey, LibraryFilter.LIBRARY)
+    var albumFilter by rememberEnumPreference(AlbumFilterKey, AlbumFilter.LIKED)
+    var artistFilter by rememberEnumPreference(ArtistFilterKey, ArtistFilter.LIKED)
 
     val filterContent = @Composable {
         Row {
@@ -40,6 +46,12 @@ fun LibraryScreen(navController: NavController) {
                         if (filterType == it) {
                             LibraryFilter.LIBRARY
                         } else {
+                            if (it == LibraryFilter.ALBUMS && filterType != LibraryFilter.ALBUMS && albumFilter != AlbumFilter.LIKED) {
+                                albumFilter = AlbumFilter.LIKED
+                            }
+                            if (it == LibraryFilter.ARTISTS && filterType != LibraryFilter.ARTISTS && artistFilter != ArtistFilter.LIKED) {
+                                artistFilter = ArtistFilter.LIKED
+                            }
                             it
                         }
                 },

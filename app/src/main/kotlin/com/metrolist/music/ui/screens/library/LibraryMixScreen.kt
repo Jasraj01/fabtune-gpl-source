@@ -5,6 +5,33 @@
 
 package com.metrolist.music.ui.screens.library
 
+/*
+APPLE MUSIC-GRADE PERFORMANCE OPTIMIZATION REPORT
+
+Bottlenecks Identified:
+- Auto-playlist placeholders used random UUIDs per recomposition.
+- Mixed-library sort/dedup work re-ran eagerly on recomposition.
+
+Optimizations Applied:
+- Replaced random IDs with stable deterministic IDs.
+- Memoized merged/sorted/distinct lists via remember.
+
+Main-thread work reduced by:
+- Avoiding repeated large-list sorting/allocation during UI recomposition.
+
+Recomposition reductions:
+- Stable IDs prevent unnecessary item identity churn in Lazy containers.
+
+Scroll performance improvements:
+- Lower allocation pressure while scrolling/toggling sort modes.
+
+Image pipeline improvements:
+- N/A in this file.
+
+Expected impact on low-end devices:
+- Smoother library list/grid interactions with less GC pressure.
+*/
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -33,6 +60,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -88,7 +116,12 @@ import kotlinx.coroutines.withContext
 import java.text.Collator
 import java.time.LocalDateTime
 import java.util.Locale
-import java.util.UUID
+
+private const val AUTO_PLAYLIST_LIKED_ID = "auto_playlist_liked"
+private const val AUTO_PLAYLIST_DOWNLOADED_ID = "auto_playlist_downloaded"
+private const val AUTO_PLAYLIST_TOP_ID = "auto_playlist_top"
+private const val AUTO_PLAYLIST_CACHED_ID = "auto_playlist_cached"
+private const val AUTO_PLAYLIST_UPLOADED_ID = "auto_playlist_uploaded"
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -114,55 +147,67 @@ fun LibraryMixScreen(
     val (ytmSync) = rememberPreference(YtmSyncKey, true)
 
     val topSize by viewModel.topValue.collectAsState(initial = 50)
-    val likedPlaylist =
-        Playlist(
-            playlist = PlaylistEntity(
-                id = UUID.randomUUID().toString(),
-                name = stringResource(R.string.liked)
-            ),
-            songCount = 0,
-            songThumbnails = emptyList(),
-        )
+    val likedLabel = stringResource(R.string.liked)
+    val offlineLabel = stringResource(R.string.offline)
+    val topLabel = stringResource(R.string.my_top)
+    val cachedLabel = stringResource(R.string.cached_playlist)
+    val uploadedLabel = stringResource(R.string.uploaded_playlist)
 
-    val downloadPlaylist =
+    val likedPlaylist = remember(likedLabel) {
         Playlist(
             playlist = PlaylistEntity(
-                id = UUID.randomUUID().toString(),
-                name = stringResource(R.string.offline)
+                id = AUTO_PLAYLIST_LIKED_ID,
+                name = likedLabel
             ),
             songCount = 0,
             songThumbnails = emptyList(),
         )
+    }
 
-    val topPlaylist =
+    val downloadPlaylist = remember(offlineLabel) {
         Playlist(
             playlist = PlaylistEntity(
-                id = UUID.randomUUID().toString(),
-                name = stringResource(R.string.my_top) + " $topSize"
+                id = AUTO_PLAYLIST_DOWNLOADED_ID,
+                name = offlineLabel
             ),
             songCount = 0,
             songThumbnails = emptyList(),
         )
+    }
 
-    val cachePlaylist =
+    val topPlaylistName = remember(topLabel, topSize) { "$topLabel $topSize" }
+    val topPlaylist = remember(topPlaylistName) {
         Playlist(
             playlist = PlaylistEntity(
-                id = UUID.randomUUID().toString(),
-                name = stringResource(R.string.cached_playlist)
+                id = AUTO_PLAYLIST_TOP_ID,
+                name = topPlaylistName
             ),
             songCount = 0,
             songThumbnails = emptyList(),
         )
+    }
 
-    val uploadedPlaylist =
+    val cachePlaylist = remember(cachedLabel) {
         Playlist(
             playlist = PlaylistEntity(
-                id = UUID.randomUUID().toString(),
-                name = stringResource(R.string.uploaded_playlist)
+                id = AUTO_PLAYLIST_CACHED_ID,
+                name = cachedLabel
             ),
             songCount = 0,
             songThumbnails = emptyList(),
         )
+    }
+
+    val uploadedPlaylist = remember(uploadedLabel) {
+        Playlist(
+            playlist = PlaylistEntity(
+                id = AUTO_PLAYLIST_UPLOADED_ID,
+                name = uploadedLabel
+            ),
+            songCount = 0,
+            songThumbnails = emptyList(),
+        )
+    }
 
     val (showLiked) = rememberPreference(ShowLikedPlaylistKey, true)
     val (showDownloaded) = rememberPreference(ShowDownloadedPlaylistKey, true)
@@ -175,23 +220,28 @@ fun LibraryMixScreen(
     val artist = viewModel.artists.collectAsState()
     val playlist = viewModel.playlists.collectAsState()
 
-    var allItems = albums.value + artist.value + playlist.value
-    val collator = Collator.getInstance(Locale.getDefault())
-    collator.strength = Collator.PRIMARY
-    allItems =
+    val baseItems = remember(albums.value, artist.value, playlist.value) {
+        albums.value + artist.value + playlist.value
+    }
+    val collator = remember {
+        Collator.getInstance(Locale.getDefault()).apply {
+            strength = Collator.PRIMARY
+        }
+    }
+    val allItems = remember(baseItems, sortType, sortDescending, collator) {
         when (sortType) {
             MixSortType.CREATE_DATE ->
-                allItems.sortedBy { item ->
+                baseItems.sortedBy { item ->
                     when (item) {
                         is Album -> item.album.bookmarkedAt
                         is Artist -> item.artist.bookmarkedAt
                         is Playlist -> item.playlist.createdAt
-                        else -> LocalDateTime.now()
+                        else -> LocalDateTime.MIN
                     }
                 }
 
             MixSortType.NAME ->
-                allItems.sortedWith(
+                baseItems.sortedWith(
                     compareBy(collator) { item ->
                         when (item) {
                             is Album -> item.album.title
@@ -203,15 +253,17 @@ fun LibraryMixScreen(
                 )
 
             MixSortType.LAST_UPDATED ->
-                allItems.sortedBy { item ->
+                baseItems.sortedBy { item ->
                     when (item) {
                         is Album -> item.album.lastUpdateTime
                         is Artist -> item.artist.lastUpdateTime
                         is Playlist -> item.playlist.lastUpdateTime
-                        else -> LocalDateTime.now()
+                        else -> LocalDateTime.MIN
                     }
                 }
         }.reversed(sortDescending)
+    }
+    val distinctItems = remember(allItems) { allItems.distinctBy { it.id } }
 
     val coroutineScope = rememberCoroutineScope()
 
@@ -408,7 +460,7 @@ fun LibraryMixScreen(
                     }
 
                     items(
-                        items = allItems.distinctBy { it.id },
+                        items = distinctItems,
                         key = { it.id },
                         contentType = { CONTENT_TYPE_PLAYLIST },
                     ) { item ->
@@ -683,7 +735,7 @@ fun LibraryMixScreen(
                     }
 
                     items(
-                        items = allItems.distinctBy { it.id },
+                        items = distinctItems,
                         key = { it.id },
                         contentType = { CONTENT_TYPE_PLAYLIST },
                     ) { item ->

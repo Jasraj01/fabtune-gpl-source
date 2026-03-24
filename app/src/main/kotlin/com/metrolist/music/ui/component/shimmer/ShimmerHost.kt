@@ -1,3 +1,8 @@
+/**
+ * Metrolist Project (C) 2026
+ * Licensed under GPL-3.0 | See git history for contributors
+ */
+
 package com.metrolist.music.ui.component.shimmer
 
 import androidx.compose.animation.core.LinearEasing
@@ -23,22 +28,27 @@ fun ShimmerHost(
     modifier: Modifier = Modifier,
     horizontalAlignment: Alignment.Horizontal = Alignment.Start,
     verticalArrangement: Arrangement.Vertical = Arrangement.Top,
+    showGradient: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val baseModifier = modifier
+        .shimmer()
+        .graphicsLayer(alpha = 0.99f)
+
     Column(
         horizontalAlignment = horizontalAlignment,
         verticalArrangement = verticalArrangement,
-        modifier =
-        modifier
-            .shimmer()
-            .graphicsLayer(alpha = 0.99f)
-            .drawWithContent {
+        modifier = if (showGradient) {
+            baseModifier.drawWithContent {
                 drawContent()
                 drawRect(
                     brush = Brush.verticalGradient(listOf(Color.Black, Color.Transparent)),
                     blendMode = BlendMode.DstIn,
                 )
-            },
+            }
+        } else {
+            baseModifier
+        },
         content = content,
     )
 }
@@ -46,19 +56,19 @@ fun ShimmerHost(
 val ShimmerTheme =
     defaultShimmerTheme.copy(
         animationSpec =
-        infiniteRepeatable(
-            animation =
-            tween(
-                durationMillis = 800,
-                easing = LinearEasing,
-                delayMillis = 250,
+            infiniteRepeatable(
+                animation =
+                    tween(
+                        durationMillis = 800,
+                        easing = LinearEasing,
+                        delayMillis = 250,
+                    ),
+                repeatMode = RepeatMode.Restart,
             ),
-            repeatMode = RepeatMode.Restart,
-        ),
         shaderColors =
-        listOf(
-            Color.Unspecified.copy(alpha = 0.25f),
-            Color.Unspecified.copy(alpha = 0.50f),
-            Color.Unspecified.copy(alpha = 0.25f),
-        ),
+            listOf(
+                Color.Unspecified.copy(alpha = 0.25f),
+                Color.Unspecified.copy(alpha = 0.50f),
+                Color.Unspecified.copy(alpha = 0.25f),
+            ),
     )

@@ -2,7 +2,6 @@ package com.metrolist.music.ui.screens
 
 import android.content.res.Configuration.ORIENTATION_LANDSCAPE
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.ScrollableDefaults
@@ -14,19 +13,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.overscroll
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -55,9 +51,6 @@ import com.metrolist.music.ui.component.YouTubeGridItem
 import com.metrolist.music.ui.component.YouTubeListItem
 import com.metrolist.music.ui.component.image.PrefetchImageModel
 import com.metrolist.music.ui.component.image.PrefetchNextImages
-import com.metrolist.music.ui.component.shimmer.GridItemPlaceHolder
-import com.metrolist.music.ui.component.shimmer.ShimmerHost
-import com.metrolist.music.ui.component.shimmer.TextPlaceholder
 import com.metrolist.music.ui.menu.YouTubeSongMenu
 import com.metrolist.music.ui.utils.SnapLayoutInfoProvider
 import com.metrolist.music.viewmodels.ChartsViewModel
@@ -65,7 +58,9 @@ import com.metrolist.music.viewmodels.ExploreViewModel
 import kotlinx.coroutines.launch
 import kotlin.math.ceil
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class,
+    ExperimentalMaterial3ExpressiveApi::class
+)
 @Composable
 fun ExploreScreen(
     navController: NavController,
@@ -101,12 +96,6 @@ fun ExploreScreen(
     val scrollToTop by backStackEntry?.savedStateHandle
         ?.getStateFlow("scrollToTop", false)?.collectAsStateWithLifecycle(false) ?: remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        if (chartsPage == null) {
-            chartsViewModel.loadCharts()
-        }
-    }
-
     LaunchedEffect(scrollToTop) {
         if (scrollToTop) {
             lazyListState.animateScrollToItem(0)
@@ -123,6 +112,15 @@ fun ExploreScreen(
         )
     }
     val chartSections = remember(chartsPage) { chartsPage?.sections.orEmpty() }
+    val horizontalSystemBarPadding = WindowInsets.systemBars
+        .only(WindowInsetsSides.Horizontal)
+        .asPaddingValues()
+    val chartItemWidthFactor = remember(localConfiguration.screenWidthDp) {
+        if (localConfiguration.screenWidthDp.dp * 0.475f >= 320.dp) 0.475f else 0.9f
+    }
+    val chartItemWidth = remember(localConfiguration.screenWidthDp, chartItemWidthFactor) {
+        localConfiguration.screenWidthDp.dp * chartItemWidthFactor
+    }
     val chartSectionsWithoutVideos = remember(chartSections) {
         chartSections.filter { it.title != "Top music videos" }
     }
@@ -192,81 +190,13 @@ fun ExploreScreen(
 
             if (isInitialLoading) {
                 item(key = "loading", contentType = "loading") {
-                    ShimmerHost {
-                        TextPlaceholder(
-                            height = 36.dp,
-                            modifier = Modifier
-                                .padding(12.dp)
-                                .fillMaxWidth(0.5f),
-                        )
-                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                            val horizontalLazyGridItemWidthFactor =
-                                if (maxWidth * 0.475f >= 320.dp) 0.475f else 0.9f
-                            val horizontalLazyGridItemWidth =
-                                maxWidth * horizontalLazyGridItemWidthFactor
-
-                            LazyHorizontalGrid(
-                                rows = GridCells.Fixed(4),
-                                contentPadding = PaddingValues(start = 4.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(ListItemHeight * 4),
-                                userScrollEnabled = false // Disable scroll in nested grid
-                            ) {
-                                items(
-                                    count = 4,
-                                    key = { "charts_loading_$it" },
-                                    contentType = { "loading_item" },
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .width(horizontalLazyGridItemWidth)
-                                            .padding(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(ListItemHeight - 16.dp)
-                                                .clip(RoundedCornerShape(4.dp))
-                                                .background(MaterialTheme.colorScheme.onSurface),
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Column(
-                                            modifier = Modifier.fillMaxHeight(),
-                                            verticalArrangement = Arrangement.Center,
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .height(16.dp)
-                                                    .width(120.dp)
-                                                    .background(MaterialTheme.colorScheme.onSurface),
-                                            )
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            Box(
-                                                modifier = Modifier
-                                                    .height(12.dp)
-                                                    .width(80.dp)
-                                                    .background(MaterialTheme.colorScheme.onSurface),
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        repeat(2) {
-                            TextPlaceholder(
-                                height = 36.dp,
-                                modifier = Modifier
-                                    .padding(vertical = 12.dp, horizontal = 12.dp)
-                                    .width(250.dp),
-                            )
-                            Row {
-                                repeat(2) {
-                                    GridItemPlaceHolder()
-                                }
-                            }
-                        }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        ContainedLoadingIndicator()
                     }
                 }
             } else if (!exploreHasLoadedContent) {
@@ -309,110 +239,101 @@ fun ExploreScreen(
                         }
 
                         item(key = "section_content_$sectionIndex", contentType = "chart_section") {
-                            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                                val horizontalLazyGridItemWidthFactor =
-                                    if (maxWidth * 0.475f >= 320.dp) 0.475f else 0.9f
-                                val horizontalLazyGridItemWidth =
-                                    maxWidth * horizontalLazyGridItemWidthFactor
-
-                                val lazyGridState = rememberLazyGridState()
-                                val sectionSongs = chartSongsBySection[sectionIndex]
-                                val sectionPrefetchModels = remember(sectionSongs) {
-                                    sectionSongs.mapNotNull { song ->
-                                        song.thumbnail?.takeIf { it.isNotBlank() }?.let { url ->
-                                            PrefetchImageModel(
-                                                stableKey = "chart_song_${song.id}",
-                                                url = url,
-                                            )
-                                        }
-                                    }
-                                }
-                                val snapLayoutInfoProvider = remember(lazyGridState) {
-                                    SnapLayoutInfoProvider(
-                                        lazyGridState = lazyGridState,
-                                        positionInLayout = { layoutSize, itemSize ->
-                                            (layoutSize * horizontalLazyGridItemWidthFactor / 2f - itemSize / 2f)
-                                        },
-                                    )
-                                }
-
-                                LazyHorizontalGrid(
-                                    state = lazyGridState,
-                                    rows = GridCells.Fixed(4),
-                                    flingBehavior = rememberSnapFlingBehavior(snapLayoutInfoProvider),
-                                    contentPadding = WindowInsets.systemBars
-                                        .only(WindowInsetsSides.Horizontal)
-                                        .asPaddingValues(),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(ListItemHeight * 4),
-                                ) {
-                                    items(
-                                        items = sectionSongs,
-                                        key = { it.id },
-                                        contentType = { "song_item" },
-                                    ) { song ->
-                                        YouTubeListItem(
-                                            item = song,
-                                            isActive = song.id == mediaMetadata?.id,
-                                            isPlaying = isPlaying,
-                                            isSwipeable = false,
-                                            trailingContent = {
-                                                IconButton(
-                                                    onClick = {
-                                                        menuState.show {
-                                                            YouTubeSongMenu(
-                                                                song = song,
-                                                                navController = navController,
-                                                                onDismiss = menuState::dismiss,
-                                                            )
-                                                        }
-                                                    },
-                                                ) {
-                                                    Icon(
-                                                        painter = painterResource(R.drawable.more_vert),
-                                                        contentDescription = null,
-                                                    )
-                                                }
-                                            },
-                                            modifier = Modifier
-                                                .width(horizontalLazyGridItemWidth)
-                                                .combinedClickable(
-                                                    onClick = {
-                                                        if (song.id == mediaMetadata?.id) {
-                                                            playerConnection.togglePlayPause()
-                                                        } else {
-                                                            playerConnection.playQueue(
-                                                                YouTubeQueue(
-                                                                    endpoint = WatchEndpoint(videoId = song.id),
-                                                                    preloadItem = song.toMediaMetadata(),
-                                                                ),
-                                                            )
-                                                        }
-                                                    },
-                                                    onLongClick = {
-                                                        haptic.performHapticFeedback(
-                                                            HapticFeedbackType.LongPress
-                                                        )
-                                                        menuState.show {
-                                                            YouTubeSongMenu(
-                                                                song = song,
-                                                                navController = navController,
-                                                                onDismiss = menuState::dismiss,
-                                                            )
-                                                        }
-                                                    },
-                                                ),
+                            val lazyGridState = rememberLazyGridState()
+                            val sectionSongs = chartSongsBySection[sectionIndex]
+                            val sectionPrefetchModels = remember(sectionSongs) {
+                                sectionSongs.mapNotNull { song ->
+                                    song.thumbnail?.takeIf { it.isNotBlank() }?.let { url ->
+                                        PrefetchImageModel(
+                                            stableKey = "chart_song_${song.id}",
+                                            url = url,
                                         )
                                     }
                                 }
-
-                                PrefetchNextImages(
-                                    state = lazyGridState,
-                                    imageModels = sectionPrefetchModels,
-                                    prefetchCount = 4,
+                            }
+                            val snapLayoutInfoProvider = remember(lazyGridState, chartItemWidthFactor) {
+                                SnapLayoutInfoProvider(
+                                    lazyGridState = lazyGridState,
+                                    positionInLayout = { layoutSize, itemSize ->
+                                        (layoutSize * chartItemWidthFactor / 2f - itemSize / 2f)
+                                    },
                                 )
                             }
+
+                            LazyHorizontalGrid(
+                                state = lazyGridState,
+                                rows = GridCells.Fixed(4),
+                                flingBehavior = rememberSnapFlingBehavior(snapLayoutInfoProvider),
+                                contentPadding = horizontalSystemBarPadding,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(ListItemHeight * 4),
+                            ) {
+                                items(
+                                    items = sectionSongs,
+                                    key = { it.id },
+                                    contentType = { "song_item" },
+                                ) { song ->
+                                    YouTubeListItem(
+                                        item = song,
+                                        isActive = song.id == mediaMetadata?.id,
+                                        isPlaying = isPlaying,
+                                        isSwipeable = false,
+                                        trailingContent = {
+                                            IconButton(
+                                                onClick = {
+                                                    menuState.show {
+                                                        YouTubeSongMenu(
+                                                            song = song,
+                                                            navController = navController,
+                                                            onDismiss = menuState::dismiss,
+                                                        )
+                                                    }
+                                                },
+                                            ) {
+                                                Icon(
+                                                    painter = painterResource(R.drawable.more_vert),
+                                                    contentDescription = null,
+                                                )
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .width(chartItemWidth)
+                                            .combinedClickable(
+                                                onClick = {
+                                                    if (song.id == mediaMetadata?.id) {
+                                                        playerConnection.togglePlayPause()
+                                                    } else {
+                                                        playerConnection.playQueue(
+                                                            YouTubeQueue(
+                                                                endpoint = WatchEndpoint(videoId = song.id),
+                                                                preloadItem = song.toMediaMetadata(),
+                                                            ),
+                                                        )
+                                                    }
+                                                },
+                                                onLongClick = {
+                                                    haptic.performHapticFeedback(
+                                                        HapticFeedbackType.LongPress
+                                                    )
+                                                    menuState.show {
+                                                        YouTubeSongMenu(
+                                                            song = song,
+                                                            navController = navController,
+                                                            onDismiss = menuState::dismiss,
+                                                        )
+                                                    }
+                                                },
+                                            ),
+                                    )
+                                }
+                            }
+
+                            PrefetchNextImages(
+                                state = lazyGridState,
+                                imageModels = sectionPrefetchModels,
+                                prefetchCount = 4,
+                            )
                         }
                     }
 
@@ -426,9 +347,7 @@ fun ExploreScreen(
                         item(key = "top_videos_content", contentType = "top_videos") {
                             LazyRow(
                                 state = topVideosRowState,
-                                contentPadding = WindowInsets.systemBars
-                                    .only(WindowInsetsSides.Horizontal)
-                                    .asPaddingValues(),
+                                contentPadding = horizontalSystemBarPadding,
                             ) {
                                 items(
                                     items = topVideoItems,

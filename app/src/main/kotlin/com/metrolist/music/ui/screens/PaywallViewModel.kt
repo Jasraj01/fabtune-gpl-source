@@ -28,7 +28,12 @@ object PaywallKeys {
 // ------------------------------
 data class PaywallUiState(
     val showPaywall: Boolean = false,
-    val isSubscribed: Boolean = false
+    val isSubscribed: Boolean = false,
+    // FIX: Track whether the subscription check has completed at least once.
+    // Without this, evaluatePaywall() runs while isSubscribed is still at its
+    // default false — causing subscribed users to see the paywall on cold start
+    // before RevenueCat's getCustomerInfo() callback has returned.
+    val isSubscriptionResolved: Boolean = false
 )
 
 // ------------------------------
@@ -66,20 +71,35 @@ class PaywallViewModel(application: Application) : AndroidViewModel(application)
     // ------------------------------
     // Subscription check
     // ------------------------------
-    private fun checkSubscription() {
+    private fun checkSubscription(retryOnError: Boolean = true) {
         Purchases.sharedInstance.getCustomerInfo(object : ReceiveCustomerInfoCallback {
 
             override fun onReceived(customerInfo: CustomerInfo) {
                 val isSubbed =
                     customerInfo.entitlements.active.containsKey("premium")
 
-                // 🔑 Re-evaluate paywall AFTER subscription is known
-                _uiState.update { it.copy(isSubscribed = isSubbed) }
+                // FIX: Mark resolved=true BEFORE evaluating the paywall so that
+                // evaluatePaywall() always sees a settled subscription state.
+                _uiState.update { it.copy(isSubscribed = isSubbed, isSubscriptionResolved = true) }
                 evaluatePaywall()
             }
 
             override fun onError(error: PurchasesError) {
-                evaluatePaywall()
+                // FIX: On error, retry once after a short delay before falling back.
+                // Google Play Billing is often not ready on cold start (first 500-1500ms),
+                // which causes RevenueCat to return an error even for subscribed users.
+                // Retrying after 1.5s catches the majority of these transient failures.
+                if (retryOnError) {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        kotlinx.coroutines.delay(1_500L)
+                        checkSubscription(retryOnError = false)
+                    }
+                } else {
+                    // Only evaluate paywall after the retry has also failed — this prevents
+                    // showing the paywall to subscribed users due to a transient Billing error.
+                    _uiState.update { it.copy(isSubscriptionResolved = true) }
+                    evaluatePaywall()
+                }
             }
         })
     }
@@ -99,6 +119,14 @@ class PaywallViewModel(application: Application) : AndroidViewModel(application)
     // Core paywall logic
     // ------------------------------
     private fun evaluatePaywall() {
+        // FIX: Never evaluate the paywall until the subscription state is confirmed.
+        // Calling this before isSubscriptionResolved=true means isSubscribed defaults to
+        // false, which incorrectly shows the paywall to subscribed users on cold start.
+        if (!_uiState.value.isSubscriptionResolved) {
+            _uiState.update { it.copy(showPaywall = false) }
+            return
+        }
+
         //  Premium users NEVER see paywall
         if (_uiState.value.isSubscribed) {
             _uiState.update { it.copy(showPaywall = false) }
@@ -118,8 +146,8 @@ class PaywallViewModel(application: Application) : AndroidViewModel(application)
             val now = System.currentTimeMillis()
             val lastShown = prefs[PaywallKeys.LAST_PAYWALL_TIME_KEY] ?: 0L
 
-            //  Minimum 6 hours gap
-            val minGapMillis = 6 * 60 * 60 * 1000L
+            //  Minimum 2 hours gap between paywall appearances
+            val minGapMillis = 2 * 60 * 60 * 1000L
             if (lastShown != 0L && now - lastShown < minGapMillis) {
                 _uiState.update { it.copy(showPaywall = false) }
                 return@launch
@@ -139,13 +167,13 @@ class PaywallViewModel(application: Application) : AndroidViewModel(application)
             }
 
             //  Max 2 per day
-            if (shownToday >= 3) {
+            if (shownToday >= 4) {
                 _uiState.update { it.copy(showPaywall = false) }
                 return@launch
             }
 
             //  Random chance (50%)
-            val shouldShow = Random.nextFloat() < 0.5f
+            val shouldShow = Random.nextFloat() < 0.70f
             _uiState.update { it.copy(showPaywall = shouldShow) }
 
             if (shouldShow) {

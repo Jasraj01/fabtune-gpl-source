@@ -16,30 +16,45 @@ import com.google.android.gms.cast.framework.media.NotificationOptions
 class CastOptionsProvider : OptionsProvider {
 
     override fun getCastOptions(context: Context): CastOptions {
-        val notificationOptions = NotificationOptions.Builder()
-            .setActions(
-                listOf(
-                    MediaIntentReceiver.ACTION_SKIP_PREV,
-                    MediaIntentReceiver.ACTION_TOGGLE_PLAYBACK,
-                    MediaIntentReceiver.ACTION_SKIP_NEXT,
-                    MediaIntentReceiver.ACTION_STOP_CASTING
-                ),
-                intArrayOf(1, 2) // Indices of actions for compact view
-            )
-            .build()
+        cachedCastOptions?.let { return it }
 
-        val mediaOptions = CastMediaOptions.Builder()
-            .setNotificationOptions(notificationOptions)
-            .build()
+        synchronized(castOptionsLock) {
+            cachedCastOptions?.let { return it }
 
-        return CastOptions.Builder()
-            .setReceiverApplicationId(CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID)
-            .setCastMediaOptions(mediaOptions)
-            .setStopReceiverApplicationWhenEndingSession(true)
-            .build()
+            val notificationOptions = NotificationOptions.Builder()
+                .setActions(castNotificationActions, compactActionIndices)
+                .build()
+
+            val mediaOptions = CastMediaOptions.Builder()
+                .setNotificationOptions(notificationOptions)
+                .build()
+
+            return CastOptions.Builder()
+                .setReceiverApplicationId(CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID)
+                .setCastMediaOptions(mediaOptions)
+                .setStopReceiverApplicationWhenEndingSession(true)
+                .build()
+                .also { cachedCastOptions = it }
+        }
     }
 
     override fun getAdditionalSessionProviders(context: Context): List<SessionProvider>? {
         return null
+    }
+
+    private companion object {
+        private val castOptionsLock = Any()
+
+        @Volatile
+        private var cachedCastOptions: CastOptions? = null
+
+        private val castNotificationActions = listOf(
+            MediaIntentReceiver.ACTION_SKIP_PREV,
+            MediaIntentReceiver.ACTION_TOGGLE_PLAYBACK,
+            MediaIntentReceiver.ACTION_SKIP_NEXT,
+            MediaIntentReceiver.ACTION_STOP_CASTING
+        )
+
+        private val compactActionIndices = intArrayOf(1, 2)
     }
 }

@@ -5,6 +5,7 @@
 
 package com.metrolist.music.ui.screens.library
 
+import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -39,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -70,6 +72,8 @@ import com.metrolist.music.constants.ShowTopPlaylistKey
 import com.metrolist.music.constants.ShowCachedPlaylistKey
 //import com.metrolist.music.constants.ShowUploadedPlaylistKey
 import com.metrolist.music.constants.YtmSyncKey
+import com.metrolist.music.data.playlist.CreatePlaylistErrorReason
+import com.metrolist.music.data.playlist.CreatePlaylistResult
 import com.metrolist.music.db.entities.Playlist
 import com.metrolist.music.db.entities.PlaylistEntity
 import com.metrolist.music.ui.component.CreatePlaylistDialog
@@ -83,6 +87,7 @@ import com.metrolist.music.ui.component.SortHeader
 import com.metrolist.music.utils.rememberEnumPreference
 import com.metrolist.music.utils.rememberPreference
 import com.metrolist.music.viewmodels.LibraryPlaylistsViewModel
+import com.metrolist.music.viewmodels.PlaylistsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.UUID
@@ -93,11 +98,13 @@ fun LibraryPlaylistsScreen(
     navController: NavController,
     filterContent: @Composable () -> Unit,
     viewModel: LibraryPlaylistsViewModel = hiltViewModel(),
+    playlistsViewModel: PlaylistsViewModel = hiltViewModel(),
     initialTextFieldValue: String? = null,
     allowSyncing: Boolean = true,
 ) {
     val menuState = LocalMenuState.current
     val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
 
     val coroutineScope = rememberCoroutineScope()
 
@@ -206,12 +213,31 @@ fun LibraryPlaylistsScreen(
     }
 
     var showCreatePlaylistDialog by rememberSaveable { mutableStateOf(false) }
+    val playlistCreationResult by playlistsViewModel.playlistCreationResult.collectAsState()
+
+    LaunchedEffect(playlistCreationResult) {
+        when (val result = playlistCreationResult) {
+            is CreatePlaylistResult.Success -> playlistsViewModel.clearPlaylistCreationResult()
+            is CreatePlaylistResult.Error -> {
+                val message = when (result.reason) {
+                    CreatePlaylistErrorReason.InvalidInput -> result.message
+                    CreatePlaylistErrorReason.Authentication -> context.getString(R.string.not_logged_in_youtube)
+                    CreatePlaylistErrorReason.Network -> context.getString(R.string.error_no_internet)
+                    CreatePlaylistErrorReason.Unexpected -> context.getString(R.string.error_unknown)
+                }
+                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                playlistsViewModel.clearPlaylistCreationResult()
+            }
+            null -> Unit
+        }
+    }
 
     if (showCreatePlaylistDialog) {
         CreatePlaylistDialog(
             onDismiss = { showCreatePlaylistDialog = false },
             initialTextFieldValue = initialTextFieldValue,
-            allowSyncing = allowSyncing
+            allowSyncing = allowSyncing,
+            viewModel = playlistsViewModel,
         )
     }
 

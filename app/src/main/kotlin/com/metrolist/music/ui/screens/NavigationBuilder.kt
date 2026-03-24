@@ -1,6 +1,9 @@
 package com.metrolist.music.ui.screens
 
 import android.app.Activity
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -11,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.metrolist.music.utils.rememberEnumPreference
 import androidx.compose.material3.Icon
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -32,6 +34,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
@@ -76,6 +79,9 @@ import com.metrolist.music.utils.rememberPreference
 import com.metrolist.music.eq.data.EQProfileRepository
 import com.metrolist.music.ui.screens.equalizer.EqScreen
 
+private val SearchFadeInSpec = tween<Float>(180, easing = LinearOutSlowInEasing)
+private val SearchFadeOutSpec = tween<Float>(140, easing = FastOutLinearInEasing)
+private val SearchSlideSpec = tween<IntOffset>(190, easing = FastOutSlowInEasing)
 
 @OptIn(ExperimentalMaterial3Api::class)
 fun NavGraphBuilder.navigationBuilder(
@@ -86,7 +92,7 @@ fun NavGraphBuilder.navigationBuilder(
     snackbarHostState: SnackbarHostState
 ) {
     composable(Screens.Home.route) {
-        HomeScreen(navController = navController, snackbarHostState = snackbarHostState)
+        HomeScreen(navController = navController)
     }
 
     composable("premium") {
@@ -163,24 +169,30 @@ fun NavGraphBuilder.navigationBuilder(
             },
         ),
         enterTransition = {
-            fadeIn(tween(250))
+            fadeIn(SearchFadeInSpec)
         },
         exitTransition = {
             if (targetState.destination.route?.startsWith("search/") == true) {
-                fadeOut(tween(200))
+                fadeOut(SearchFadeOutSpec)
             } else {
-                fadeOut(tween(200)) + slideOutHorizontally { -it / 2 }
+                fadeOut(SearchFadeOutSpec) + slideOutHorizontally(
+                    animationSpec = SearchSlideSpec,
+                    targetOffsetX = { -it / 4 }
+                )
             }
         },
         popEnterTransition = {
             if (initialState.destination.route?.startsWith("search/") == true) {
-                fadeIn(tween(250))
+                fadeIn(SearchFadeInSpec)
             } else {
-                fadeIn(tween(250)) + slideInHorizontally { -it / 2 }
+                fadeIn(SearchFadeInSpec) + slideInHorizontally(
+                    animationSpec = SearchSlideSpec,
+                    initialOffsetX = { -it / 4 }
+                )
             }
         },
         popExitTransition = {
-            fadeOut(tween(200))
+            fadeOut(SearchFadeOutSpec)
         },
     ) {
         OnlineSearchResult(navController)

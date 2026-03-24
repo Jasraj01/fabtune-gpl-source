@@ -21,6 +21,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -774,6 +775,8 @@ private fun LegacyMiniMediaInfo(
     modifier: Modifier = Modifier,
 ) {
     val error by LocalPlayerConnection.current?.error?.collectAsState() ?: remember { mutableStateOf(null) }
+    val isVideoThumbnail = mediaMetadata.isVideoSong
+    val thumbnailShape = RoundedCornerShape(if (isVideoThumbnail) 6.dp else ThumbnailCornerRadius)
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -783,33 +786,58 @@ private fun LegacyMiniMediaInfo(
             modifier = Modifier
                 .padding(6.dp)
                 .size(48.dp)
-                .clip(RoundedCornerShape(ThumbnailCornerRadius))
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-            )
-
-            val thumbnailUrl = remember(mediaMetadata.thumbnailUrl) {
-                mediaMetadata.thumbnailUrl?.resize(144, 144)
+            if (!isVideoThumbnail) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                )
             }
+
+            val thumbnailUrl = remember(mediaMetadata.thumbnailUrl, isVideoThumbnail) {
+                mediaMetadata.thumbnailUrl?.let { url ->
+                    if (isVideoThumbnail) {
+                        url.resize(width = 320)
+                    } else {
+                        url.resize(144, 144)
+                    }
+                }
+            }
+
+            val thumbnailModifier = if (isVideoThumbnail) {
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .align(Alignment.Center)
+                    .clip(thumbnailShape)
+            } else {
+                Modifier
+                    .fillMaxSize()
+                    .clip(thumbnailShape)
+            }
+
             AsyncImage(
                 model = thumbnailUrl,
                 contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(ThumbnailCornerRadius)),
+                contentScale = if (isVideoThumbnail) ContentScale.Crop else ContentScale.Fit,
+                modifier = thumbnailModifier,
             )
 
             androidx.compose.animation.AnimatedVisibility(visible = error != null, enter = fadeIn(), exit = fadeOut()) {
-                Box(
+                val errorOverlayModifier = if (isVideoThumbnail) {
                     Modifier
-                        .fillMaxSize()
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                        .align(Alignment.Center)
+                } else {
+                    Modifier.fillMaxSize()
+                }
+                Box(
+                    errorOverlayModifier
                         .background(
                             color = if (pureBlack) Color.Black else Color.Black.copy(alpha = 0.6f),
-                            shape = RoundedCornerShape(ThumbnailCornerRadius),
+                            shape = thumbnailShape,
                         ),
                 ) {
                     Icon(

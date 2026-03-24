@@ -224,7 +224,11 @@ class SyncUtils @Inject constructor(
                 val remoteIds = remoteAlbums.map { it.id }.toSet()
                 val localAlbums = database.albumsLikedByNameAsc().first()
 
-                localAlbums.filterNot { it.id in remoteIds }.forEach { database.update(it.album.localToggleLike()) }
+                // Guard against wiping local likes on transient/empty remote responses.
+                val canPruneLocalLikes = remoteAlbums.isNotEmpty() || localAlbums.isEmpty()
+                if (canPruneLocalLikes) {
+                    localAlbums.filterNot { it.id in remoteIds }.forEach { database.update(it.album.localToggleLike()) }
+                }
 
                 remoteAlbums.forEach { album ->
                     val dbAlbum = database.album(album.id).firstOrNull()
@@ -257,7 +261,11 @@ class SyncUtils @Inject constructor(
                 val remoteIds = remoteArtists.map { it.id }.toSet()
                 val localArtists = database.artistsBookmarkedByNameAsc().first()
 
-                localArtists.filterNot { it.id in remoteIds }.forEach { database.update(it.artist.localToggleLike()) }
+                // Guard against wiping local subscriptions on transient/empty remote responses.
+                val canPruneLocalSubscriptions = remoteArtists.isNotEmpty() || localArtists.isEmpty()
+                if (canPruneLocalSubscriptions) {
+                    localArtists.filterNot { it.id in remoteIds }.forEach { database.update(it.artist.localToggleLike()) }
+                }
 
                 remoteArtists.forEach { artist ->
                     val dbArtist = database.artist(artist.id).firstOrNull()

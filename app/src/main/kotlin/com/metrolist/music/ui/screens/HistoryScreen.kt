@@ -26,7 +26,6 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,7 +38,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -47,6 +45,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.metrolist.innertube.models.WatchEndpoint
 import com.metrolist.innertube.utils.parseCookieString
@@ -89,8 +88,8 @@ fun HistoryScreen(
     val menuState = LocalMenuState.current
     val haptic = LocalHapticFeedback.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsStateWithLifecycle()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
     var selection by remember {
         mutableStateOf(false)
@@ -117,11 +116,11 @@ fun HistoryScreen(
         }
     }
 
-    val historySource by viewModel.historySource.collectAsState()
+    val historySource by viewModel.historySource.collectAsStateWithLifecycle()
 
-    val historyPage by viewModel.historyPage.collectAsState()
+    val historyPage by viewModel.historyPage.collectAsStateWithLifecycle()
 
-    val events by viewModel.events.collectAsState()
+    val events by viewModel.events.collectAsStateWithLifecycle()
 
     val innerTubeCookie by rememberPreference(InnerTubeCookieKey, "")
     val isLoggedIn = remember(innerTubeCookie) {
@@ -227,10 +226,11 @@ fun HistoryScreen(
                         )
                     }
 
-                    items(
+                    itemsIndexed(
                         items = section.songs,
-                        key = { "${section.title}_${it.id}_${section.songs.indexOf(it)}" }
-                    ) { song ->
+                        key = { index, song -> "${section.title}_${song.id}_$index" },
+                        contentType = { _, _ -> "remote_song" }
+                    ) { _, song ->
                         YouTubeListItem(
                             item = song,
                             isActive = song.id == mediaMetadata?.id,
@@ -300,7 +300,8 @@ fun HistoryScreen(
 
                     itemsIndexed(
                         items = currentDateWrappedItems,
-                        key = { index, wrappedItem -> "${dateAgo}_${wrappedItem.item.event.id}_$index" }
+                        key = { index, wrappedItem -> "${dateAgo}_${wrappedItem.item.event.id}_$index" },
+                        contentType = { _, _ -> "local_song" }
                     ) { index, wrappedItem ->
                         val event = wrappedItem.item
                         SongListItem(

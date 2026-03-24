@@ -63,6 +63,7 @@ fun AboutScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // 1. Open supported links
         Text(
             text = stringResource(R.string.open_supported_links),
             style = MaterialTheme.typography.bodyLarge,
@@ -115,77 +116,9 @@ fun AboutScreen(
                 }
         )
 
-        Row(
-            verticalAlignment = Alignment.Top,
-        ) {
-            Text(
-                text = "METROLIST",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
-            )
-        }
+        Spacer(modifier = Modifier.height(8.dp))
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = BuildConfig.VERSION_NAME,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier
-                    .border(
-                        width = 1.dp,
-                        color = MaterialTheme.colorScheme.secondary,
-                        shape = CircleShape,
-                    )
-                    .padding(
-                        horizontal = 6.dp,
-                        vertical = 2.dp,
-                    ),
-            )
-
-            Spacer(Modifier.width(4.dp))
-
-            if (BuildConfig.DEBUG) {
-                Spacer(Modifier.width(4.dp))
-
-                Text(
-                    text = "DEBUG",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier
-                        .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.secondary,
-                            shape = CircleShape,
-                        )
-                        .padding(
-                            horizontal = 6.dp,
-                            vertical = 2.dp,
-                        ),
-                )
-            } else {
-                Spacer(Modifier.width(4.dp))
-
-//                Text(
-////                    text = BuildConfig.ARCHITECTURE.uppercase(),
-//                    style = MaterialTheme.typography.labelSmall,
-//                    color = MaterialTheme.colorScheme.secondary,
-//                    modifier = Modifier
-//                        .border(
-//                            width = 1.dp,
-//                            color = MaterialTheme.colorScheme.secondary,
-//                            shape = CircleShape,
-//                        )
-//                        .padding(
-//                            horizontal = 6.dp,
-//                            vertical = 2.dp,
-//                        ),
-//                )
-            }
-        }
-
-        Spacer(Modifier.height(4.dp))
-
+        // 2. FAQ
         Text(
             text = stringResource(R.string.faq),
             style = MaterialTheme.typography.bodyLarge,
@@ -200,41 +133,34 @@ fun AboutScreen(
                 }
         )
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
-        Row {
-            IconButton(
-                onClick = { uriHandler.openUri("https://github.com/mostafaalagamy/metrolist") },
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.github),
-                    contentDescription = null
-                )
-            }
-
-            IconButton(
-                onClick = { uriHandler.openUri("https://www.instagram.com/mostafaalagamy") }
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.instagram),
-                    contentDescription = null
-                )
-            }
-        }
+        // 3. Open-source credits
+        Text(
+            text = "Open-source credits",
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp)
+                .clickable {
+                    navController.navigate("open_source_credits")
+                }
+        )
     }
 
     TopAppBar(
-        title = { Text(stringResource(R.string.about)) },
+        title = { Text("About") },
         navigationIcon = {
             IconButton(
                 onClick = navController::navigateUp,
                 onLongClick = navController::backToMain,
             ) {
-                Icon(
-                    painterResource(R.drawable.arrow_back),
+                androidx.compose.material3.Icon(
+                    painter = androidx.compose.ui.res.painterResource(com.metrolist.music.R.drawable.arrow_back),
                     contentDescription = null,
                 )
             }
-        }
+        },
+        scrollBehavior = scrollBehavior
     )
 }

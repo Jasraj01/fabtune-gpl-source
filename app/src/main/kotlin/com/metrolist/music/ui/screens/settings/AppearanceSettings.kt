@@ -1,8 +1,10 @@
 package com.metrolist.music.ui.screens.settings
 
 import android.os.Build
+import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.border
+import androidx.core.content.edit
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -58,6 +60,8 @@ import com.metrolist.music.constants.DarkModeKey
 import com.metrolist.music.constants.DefaultOpenTabKey
 import com.metrolist.music.constants.DynamicThemeKey
 import com.metrolist.music.constants.GridItemSize
+import com.metrolist.music.constants.DensityScale
+import com.metrolist.music.constants.DensityScaleKey
 import com.metrolist.music.constants.GridItemsSizeKey
 import com.metrolist.music.constants.LibraryFilter
 import com.metrolist.music.constants.LyricsClickKey
@@ -88,6 +92,7 @@ import com.metrolist.music.constants.SwipeToSongKey
 import com.metrolist.music.constants.SwipeToRemoveSongKey
 import com.metrolist.music.constants.UseNewMiniPlayerDesignKey
 import com.metrolist.music.constants.UseNewPlayerDesignKey
+import com.metrolist.music.constants.EnableHighRefreshRateKey
 import com.metrolist.music.ui.component.DefaultDialog
 import com.metrolist.music.ui.component.EnumDialog
 import com.metrolist.music.ui.component.IconButton
@@ -151,6 +156,10 @@ fun AppearanceSettings(
     val (useNewPlayerDesign, onUseNewPlayerDesignChange) = rememberPreference(
         UseNewPlayerDesignKey,
         defaultValue = false
+    )
+    val (enableHighRefreshRate, onEnableHighRefreshRateChange) = rememberPreference(
+        EnableHighRefreshRateKey,
+        defaultValue = true
     )
     val (useNewMiniPlayerDesign, onUseNewMiniPlayerDesignChange) = rememberPreference(
         UseNewMiniPlayerDesignKey,
@@ -219,6 +228,25 @@ fun AppearanceSettings(
         SlimNavBarKey,
         defaultValue = false
     )
+
+    // Density scale preferences
+    val context = activity as Context
+    val sharedPreferences = remember { context.getSharedPreferences("fabtune_settings", Context.MODE_PRIVATE) }
+    val prefDensityScale = remember(sharedPreferences) {
+        sharedPreferences.getFloat("density_scale_factor", 1.0f)
+    }
+    val (densityScale, setDensityScale) = rememberPreference(DensityScaleKey, defaultValue = prefDensityScale)
+    var showRestartDialog by rememberSaveable { mutableStateOf(false) }
+    var showDensityScaleDialog by rememberSaveable { mutableStateOf(false) }
+
+    val onDensityScaleChange: (Float) -> Unit = { newScale ->
+        setDensityScale(newScale)
+        // Write to SharedPreferences for DensityScaler to read on next startup
+        sharedPreferences.edit {
+            putFloat("density_scale_factor", newScale)
+        }
+        showRestartDialog = true
+    }
 
     val (swipeToSong, onSwipeToSongChange) = rememberPreference(
         SwipeToSongKey,
@@ -602,6 +630,82 @@ fun AppearanceSettings(
         )
     }
 
+    if (showRestartDialog) {
+        DefaultDialog(
+            onDismiss = { showRestartDialog = false },
+            buttons = {
+                TextButton(
+                    onClick = { showRestartDialog = false }
+                ) {
+                    Text(text = stringResource(android.R.string.cancel))
+                }
+                TextButton(
+                    onClick = {
+                        showRestartDialog = false
+                        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                        }
+                        context.startActivity(intent)
+                        Runtime.getRuntime().exit(0)
+                    }
+                ) {
+                    Text(text = stringResource(R.string.restart))
+                }
+            }
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.restart_required),
+                    style = MaterialTheme.typography.titleLarge
+                )
+                Text(
+                    text = stringResource(R.string.density_restart_message),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+    }
+
+    if (showDensityScaleDialog) {
+        DefaultDialog(
+            onDismiss = { showDensityScaleDialog = false },
+            buttons = {
+                TextButton(
+                    onClick = { showDensityScaleDialog = false }
+                ) {
+                    Text(text = stringResource(android.R.string.cancel))
+                }
+            }
+        ) {
+            Column {
+                DensityScale.entries.forEach { scale ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onDensityScaleChange(scale.value)
+                                showDensityScaleDialog = false
+                            }
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = scale.label,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (densityScale == scale.value) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     if (showSliderOptionDialog) {
         DefaultDialog(
             buttons = {
@@ -819,6 +923,29 @@ fun AppearanceSettings(
 //                )
                 add(
                     Material3SettingsItem(
+                        icon = painterResource(R.drawable.speed),
+                        title = { Text(stringResource(R.string.enable_high_refresh_rate)) },
+                        description = { Text(stringResource(R.string.enable_high_refresh_rate_desc)) },
+                        trailingContent = {
+                            Switch(
+                                checked = enableHighRefreshRate,
+                                onCheckedChange = onEnableHighRefreshRateChange,
+                                thumbContent = {
+                                    Icon(
+                                        painter = painterResource(
+                                            id = if (enableHighRefreshRate) R.drawable.check else R.drawable.close
+                                        ),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(SwitchDefaults.IconSize)
+                                    )
+                                }
+                            )
+                        },
+                        onClick = { onEnableHighRefreshRateChange(!enableHighRefreshRate) }
+                    )
+                )
+                add(
+                    Material3SettingsItem(
                         icon = painterResource(R.drawable.palette),
                         title = { Text(stringResource(R.string.enable_dynamic_theme)) },
                         trailingContent = {
@@ -1001,7 +1128,9 @@ fun AppearanceSettings(
                         Text(
                             when (sliderStyle) {
                                 SliderStyle.DEFAULT -> stringResource(R.string.default_)
-                                SliderStyle.WAVY -> stringResource(R.string.wavy)
+                                SliderStyle.WAVY -> if (squigglySlider) stringResource(R.string.squiggly) else stringResource(
+                                    R.string.wavy
+                                )
                                 SliderStyle.SLIM -> stringResource(R.string.slim)
                             }
                         )
@@ -1330,6 +1459,14 @@ fun AppearanceSettings(
                         )
                     },
                     onClick = { showGridSizeDialog = true }
+                ),
+                Material3SettingsItem(
+                    icon = painterResource(R.drawable.grid_view),
+                    title = { Text(stringResource(R.string.display_density)) },
+                    description = {
+                        Text(DensityScale.fromValue(densityScale).label)
+                    },
+                    onClick = { showDensityScaleDialog = true }
                 )
             )
         )

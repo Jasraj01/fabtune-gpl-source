@@ -12,14 +12,15 @@ package com.metrolist.music.ui.screens
  import androidx.compose.material3.TopAppBar
  import androidx.compose.material3.TopAppBarScrollBehavior
  import androidx.compose.runtime.Composable
- import androidx.compose.runtime.collectAsState
  import androidx.compose.runtime.getValue
+ import androidx.compose.runtime.remember
  import androidx.compose.runtime.rememberCoroutineScope
  import androidx.compose.ui.Modifier
  import androidx.compose.ui.res.painterResource
  import androidx.compose.ui.res.stringResource
  import androidx.compose.ui.unit.dp
  import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+ import androidx.lifecycle.compose.collectAsStateWithLifecycle
  import androidx.navigation.NavController
  import com.metrolist.music.constants.GridItemSize
  import com.metrolist.music.constants.GridItemsSizeKey
@@ -49,14 +50,14 @@ package com.metrolist.music.ui.screens
     scrollBehavior: TopAppBarScrollBehavior,
     browseId: String?,
     viewModel: BrowseViewModel = hiltViewModel(),
-) {
+ ) {
      val menuState = LocalMenuState.current
      val playerConnection = LocalPlayerConnection.current ?: return
-     val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
-     val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+     val isPlaying by playerConnection.isEffectivelyPlaying.collectAsStateWithLifecycle()
  
-     val title by viewModel.title.collectAsState()
-     val items by viewModel.items.collectAsState()
+     val title by viewModel.title.collectAsStateWithLifecycle()
+     val items by viewModel.items.collectAsStateWithLifecycle()
+     val distinctItems = remember(items) { items?.distinctBy { it.id }.orEmpty() }
  
      val coroutineScope = rememberCoroutineScope()
      val gridItemSize by rememberEnumPreference(GridItemsSizeKey, GridItemSize.BIG)
@@ -65,10 +66,18 @@ package com.metrolist.music.ui.screens
          columns = GridCells.Adaptive(minSize = GridThumbnailHeight + if (gridItemSize == GridItemSize.BIG) 24.dp else (-24).dp),
          contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues()
      ) {
-         items?.let { items ->
+         if (distinctItems.isNotEmpty()) {
              items(
-                 items = items.distinctBy { it.id },
-                 key = { it.id }
+                 items = distinctItems,
+                 key = { it.id },
+                 contentType = { item ->
+                     when (item) {
+                         is AlbumItem -> "album"
+                         is PlaylistItem -> "playlist"
+                         is ArtistItem -> "artist"
+                         else -> "browse_item"
+                     }
+                 }
              ) { item ->
                  YouTubeGridItem(
                      item = item,
@@ -121,12 +130,14 @@ package com.metrolist.music.ui.screens
                          )
                  )
              }
- 
-             if (items.isEmpty()) {
-                 items(8) {
-                     ShimmerHost {
-                         GridItemPlaceHolder(fillMaxWidth = true)
-                     }
+         } else {
+             items(
+                 count = 8,
+                 key = { "browse_loading_$it" },
+                 contentType = { "loading" }
+             ) {
+                 ShimmerHost {
+                     GridItemPlaceHolder(fillMaxWidth = true)
                  }
              }
          }

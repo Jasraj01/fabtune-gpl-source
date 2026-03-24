@@ -8,6 +8,7 @@ import com.metrolist.innertube.models.AlbumItem
 import com.metrolist.music.db.MusicDatabase
 import com.metrolist.music.utils.reportException
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.first
@@ -31,7 +32,7 @@ constructor(
     var otherVersions = MutableStateFlow<List<AlbumItem>>(emptyList())
 
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val album = database.album(albumId).first()
             YouTube
                 .album(albumId)

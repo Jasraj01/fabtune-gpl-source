@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.widget.Toast
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.core.view.WindowCompat
@@ -22,7 +21,6 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -613,11 +611,9 @@ fun BottomSheetPlayer(
             ) {
                 when (playerBackground) {
                     PlayerBackgroundStyle.BLUR -> {
-                        AnimatedContent(
+                        Crossfade(
                             targetState = mediaMetadata?.thumbnailUrl,
-                            transitionSpec = {
-                                fadeIn(tween(800)).togetherWith(fadeOut(tween(800)))
-                            },
+                            animationSpec = tween(durationMillis = 320),
                             label = "blurBackground"
                         ) { thumbnailUrl ->
                             if (thumbnailUrl != null) {
@@ -644,11 +640,9 @@ fun BottomSheetPlayer(
                         }
                     }
                     PlayerBackgroundStyle.GRADIENT -> {
-                        AnimatedContent(
+                        Crossfade(
                             targetState = gradientColors,
-                            transitionSpec = {
-                                fadeIn(tween(800)).togetherWith(fadeOut(tween(800)))
-                            },
+                            animationSpec = tween(durationMillis = 320),
                             label = "gradientBackground"
                         ) { colors ->
                             if (colors.isNotEmpty()) {
@@ -719,8 +713,9 @@ fun BottomSheetPlayer(
                         .build()
                 }
 
-                AnimatedContent(
+                Crossfade(
                     targetState = showInlineLyrics,
+                    animationSpec = tween(durationMillis = 160),
                     label = "ThumbnailAnimation"
                 ) { showLyrics ->
                     if (showLyrics) {
@@ -745,9 +740,9 @@ fun BottomSheetPlayer(
                 Column(
                     modifier = Modifier.weight(1f)
                 ) {
-                    AnimatedContent(
+                    Crossfade(
                         targetState = mediaMetadata.title,
-                        transitionSpec = { fadeIn() togetherWith fadeOut() },
+                        animationSpec = tween(durationMillis = 160),
                         label = "",
                     ) { title ->
                         Text(
@@ -890,7 +885,11 @@ fun BottomSheetPlayer(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        AnimatedContent(targetState = showInlineLyrics, label = "ShareButton") { showLyrics ->
+                        Crossfade(
+                            targetState = showInlineLyrics,
+                            animationSpec = tween(durationMillis = 140),
+                            label = "ShareButton"
+                        ) { showLyrics ->
                             if (showLyrics) {
                                 FilledIconButton(
                                     onClick = { isFullScreen = !isFullScreen },
@@ -929,7 +928,11 @@ fun BottomSheetPlayer(
                             }
                         }
 
-                        AnimatedContent(targetState = showInlineLyrics, label = "LikeButton") { showLyrics ->
+                        Crossfade(
+                            targetState = showInlineLyrics,
+                            animationSpec = tween(durationMillis = 140),
+                            label = "LikeButton"
+                        ) { showLyrics ->
                             if (showLyrics) {
                                 val currentLyrics by playerConnection.currentLyrics.collectAsState(initial = null)
                                 FilledIconButton(
@@ -980,7 +983,11 @@ fun BottomSheetPlayer(
                         }
                     }
                 } else {
-                    AnimatedContent(targetState = showInlineLyrics, label = "ShareButton") { showLyrics ->
+                    Crossfade(
+                        targetState = showInlineLyrics,
+                        animationSpec = tween(durationMillis = 140),
+                        label = "ShareButton"
+                    ) { showLyrics ->
                         if (showLyrics) {
                             Box(
                                 modifier = Modifier
@@ -1016,7 +1023,11 @@ fun BottomSheetPlayer(
 
                     Spacer(modifier = Modifier.size(12.dp))
 
-                    AnimatedContent(targetState = showInlineLyrics, label = "LikeButton") { showLyrics ->
+                    Crossfade(
+                        targetState = showInlineLyrics,
+                        animationSpec = tween(durationMillis = 140),
+                        label = "LikeButton"
+                    ) { showLyrics ->
                         if (showLyrics) {
                             val currentLyrics by playerConnection.currentLyrics.collectAsState(initial = null)
                             Box(
@@ -1478,10 +1489,10 @@ fun BottomSheetPlayer(
                         val currentSliderPosition by rememberUpdatedState(sliderPosition)
                         val sliderPositionProvider = remember { { currentSliderPosition } }
                         val isExpandedProvider = remember(state) { { state.isExpanded } }
-                        AnimatedContent(
+                        Crossfade(
                             targetState = showInlineLyrics,
+                            animationSpec = tween(durationMillis = 180),
                             label = "Lyrics",
-                            transitionSpec = { fadeIn() togetherWith fadeOut() }
                         ) { showLyrics ->
                             if (showLyrics) {
                                 InlineLyricsView(
@@ -1537,10 +1548,10 @@ fun BottomSheetPlayer(
                         val currentSliderPosition by rememberUpdatedState(sliderPosition)
                         val sliderPositionProvider = remember { { currentSliderPosition } }
                         val isExpandedProvider = remember(state) { { state.isExpanded } }
-                        AnimatedContent(
+                        Crossfade(
                             targetState = showInlineLyrics,
+                            animationSpec = tween(durationMillis = 180),
                             label = "Lyrics",
-                            transitionSpec = { fadeIn() togetherWith fadeOut() }
                         ) { showLyrics ->
                             if (showLyrics) {
                                 InlineLyricsView(

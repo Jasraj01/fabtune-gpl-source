@@ -25,17 +25,31 @@ class SubscriptionManager @Inject constructor() {
     }
 
     init {
-        // 1) initial fetch
+        fetchCustomerInfo(retryOnError = true)
+        // Real-time updates whenever RevenueCat pushes a state change
+        Purchases.sharedInstance.updatedCustomerInfoListener = listener
+    }
+
+    // FIX: Retry the initial fetch once after a delay if it fails.
+    // On cold start, Google Play Billing is often not yet connected when RevenueCat
+    // first tries to reach it, causing a transient error that permanently leaves
+    // _isSubscribed=false for the session — making subscribed users appear unsubscribed
+    // until the app is restarted.
+    private fun fetchCustomerInfo(retryOnError: Boolean) {
         Purchases.sharedInstance.getCustomerInfo(object : ReceiveCustomerInfoCallback {
             override fun onReceived(info: CustomerInfo) {
                 _isSubscribed.value = info.entitlements.active.containsKey(entitlementId)
             }
             override fun onError(error: PurchasesError) {
-                _isSubscribed.value = false
+                if (retryOnError) {
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        fetchCustomerInfo(retryOnError = false)
+                    }, 1_500L)
+                } else {
+                    _isSubscribed.value = false
+                }
             }
         })
-        // 2) real-time updates
-        Purchases.sharedInstance.updatedCustomerInfoListener = listener
     }
 
     fun clear() {

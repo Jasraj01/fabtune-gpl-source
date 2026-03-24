@@ -23,6 +23,10 @@ class ChartsViewModel @Inject constructor() : ViewModel() {
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
 
+    init {
+        loadCharts()
+    }
+
     fun loadCharts(force: Boolean = false) {
         if (_isLoading.value) return
         if (!force && _chartsPage.value != null) return

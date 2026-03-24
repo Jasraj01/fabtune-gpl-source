@@ -5,7 +5,6 @@
 
 package com.metrolist.music.ui.screens.library
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -30,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,7 +46,6 @@ import com.metrolist.music.LocalPlayerConnection
 import com.metrolist.music.R
 import com.metrolist.music.constants.CONTENT_TYPE_HEADER
 import com.metrolist.music.constants.CONTENT_TYPE_SONG
-import com.metrolist.music.constants.HideExplicitKey
 import com.metrolist.music.constants.SongFilter
 import com.metrolist.music.constants.SongFilterKey
 import com.metrolist.music.constants.SongSortDescendingKey
@@ -60,12 +59,14 @@ import com.metrolist.music.ui.component.HideOnScrollFAB
 import com.metrolist.music.ui.component.LocalMenuState
 import com.metrolist.music.ui.component.SongListItem
 import com.metrolist.music.ui.component.SortHeader
+import com.metrolist.music.ui.component.image.PrefetchImageModel
+import com.metrolist.music.ui.component.image.PrefetchNextImages
 import com.metrolist.music.ui.menu.SongMenu
 import com.metrolist.music.utils.rememberEnumPreference
 import com.metrolist.music.utils.rememberPreference
 import com.metrolist.music.viewmodels.LibrarySongsViewModel
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibrarySongsScreen(
     navController: NavController,
@@ -85,9 +86,19 @@ fun LibrarySongsScreen(
     val (sortDescending, onSortDescendingChange) = rememberPreference(SongSortDescendingKey, true)
 
     val (ytmSync) = rememberPreference(YtmSyncKey, true)
-    val hideExplicit by rememberPreference(key = HideExplicitKey, defaultValue = false)
 
     val songs by viewModel.allSongs.collectAsState()
+    val queueMediaItems = remember(songs) { songs.map { it.toMediaItem() } }
+    val songPrefetchModels = remember(songs) {
+        songs.mapNotNull { song ->
+            song.song.thumbnailUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                PrefetchImageModel(
+                    stableKey = "library_song_${song.id}",
+                    url = url
+                )
+            }
+        }
+    }
 
     var filter by rememberEnumPreference(SongFilterKey, SongFilter.LIKED)
 
@@ -115,12 +126,12 @@ fun LibrarySongsScreen(
             backStackEntry?.savedStateHandle?.set("scrollToTop", false)
         }
     }
-
-    val filteredSongs = if (hideExplicit) {
-        songs.filter { !it.song.explicit }
-    } else {
-        songs
-    }
+    PrefetchNextImages(
+        state = lazyListState,
+        imageModels = songPrefetchModels,
+        prefetchCount = 4,
+        requestSizePx = 144
+    )
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -194,8 +205,8 @@ fun LibrarySongsScreen(
                     Text(
                         text = pluralStringResource(
                             R.plurals.n_song,
-                            filteredSongs.size,
-                            filteredSongs.size
+                            songs.size,
+                            songs.size
                         ),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.secondary,
@@ -204,7 +215,7 @@ fun LibrarySongsScreen(
             }
 
             itemsIndexed(
-                items = filteredSongs,
+                items = songs,
                 key = { _, item -> item.song.id },
                 contentType = { _, _ -> CONTENT_TYPE_SONG },
             ) { index, song ->
@@ -243,26 +254,25 @@ fun LibrarySongsScreen(
                                 playerConnection.playQueue(
                                     ListQueue(
                                         title = context.getString(R.string.queue_all_songs),
-                                        items = filteredSongs.map { it.toMediaItem() },
+                                        items = queueMediaItems,
                                         startIndex = index,
                                     ),
                                 )
                             }
-                        }
-                        .animateItem(),
+                        },
                 )
             }
         }
 
         HideOnScrollFAB(
-            visible = filteredSongs.isNotEmpty(),
+            visible = songs.isNotEmpty(),
             lazyListState = lazyListState,
             icon = R.drawable.shuffle,
             onClick = {
                 playerConnection.playQueue(
                     ListQueue(
                         title = context.getString(R.string.queue_all_songs),
-                        items = filteredSongs.shuffled().map { it.toMediaItem() },
+                        items = queueMediaItems.shuffled(),
                     ),
                 )
             },

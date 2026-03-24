@@ -88,10 +88,9 @@ class PlayerConnection(
     val error = MutableStateFlow<PlaybackException?>(null)
     val waitingForNetworkConnection = service.waitingForNetworkConnection
 
-    // ADVANCED FIX – Error de-duplication and bounded retry
+    // Error de-duplication for UI; recovery is centralized in MusicService.
     private var lastErrorCode: Int? = null
     private var lastErrorTimeMs: Long = 0L
-    private var retryAttempts: Int = 0
 
     init {
         player.addListener(this)
@@ -278,28 +277,7 @@ class PlayerConnection(
         lastErrorCode = code
         lastErrorTimeMs = now
 
-        if (retryAttempts < 2) {
-            retryAttempts++
-            val index = player.currentMediaItemIndex
-            val currentItem = player.currentMediaItem
-            // COMPILATION FIX – use index bounds check instead of nonexistent MEDIA_ITEM_NONE
-            if (index >= 0 && currentItem != null) {
-                // ADVANCED FIX – Seamless MediaSource refresh without recreating player
-                val position = player.currentPosition
-                val playWhenReady = player.playWhenReady
-
-                player.replaceMediaItem(index, currentItem)
-                player.prepare()
-                player.seekTo(index, position)
-                if (playWhenReady) {
-                    player.play()
-                }
-            }
-            // Do not surface error yet – give retries a chance.
-            return
-        }
-
-        // After retries or for rapidly repeating errors, show a single UI error.
+        // For rapidly repeating errors, show only one surfaced error.
         if (!isDuplicate) {
             error.value = playbackError
         }

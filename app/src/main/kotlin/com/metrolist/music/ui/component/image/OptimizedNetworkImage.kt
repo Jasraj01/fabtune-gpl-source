@@ -39,6 +39,7 @@ import com.metrolist.music.ui.utils.resize
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 
+private const val THUMBNAIL_CROSSFADE_MS = 90
 private const val MAX_CROSSFADE_MS = 120
 private const val MAX_MEDIUM_RETRY_ATTEMPTS = 4
 private const val INITIAL_MEDIUM_RETRY_DELAY_MS = 350L
@@ -97,7 +98,7 @@ fun ProgressiveNetworkImage(
             context = context,
             data = thumbnailUrl,
             sizePx = thumbnailSizePx,
-            crossfadeMillis = 0,
+            crossfadeMillis = THUMBNAIL_CROSSFADE_MS,
             useRgb565 = true,
         )
     }

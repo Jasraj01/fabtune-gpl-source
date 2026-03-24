@@ -24,15 +24,16 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -43,6 +44,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.metrolist.innertube.models.AlbumItem
 import com.metrolist.innertube.models.ArtistItem
@@ -79,10 +81,10 @@ fun YouTubeBrowseScreen(
     val menuState = LocalMenuState.current
     val haptic = LocalHapticFeedback.current
     val playerConnection = LocalPlayerConnection.current ?: return
-    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsState()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
+    val isPlaying by playerConnection.isEffectivelyPlaying.collectAsStateWithLifecycle()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
-    val browseResult by viewModel.result.collectAsState()
+    val browseResult by viewModel.result.collectAsStateWithLifecycle()
 
     val coroutineScope = rememberCoroutineScope()
 
@@ -145,9 +147,11 @@ fun YouTubeBrowseScreen(
                                     .height(ListItemHeight * 4)
                                     .animateItem()
                             ) {
-                                items(
+                                itemsIndexed(
                                     items = it.items,
-                                ) { song ->
+                                    key = { index, item -> "song_${item.id}_$index" },
+                                    contentType = { _, _ -> "song_item" },
+                                ) { _, song ->
                                     Box(Modifier.width(350.dp)) {
                                         YouTubeListItem(
                                             item = song as SongItem,
@@ -196,9 +200,18 @@ fun YouTubeBrowseScreen(
                             LazyRow(
                                 contentPadding = WindowInsets.systemBars.only(WindowInsetsSides.Horizontal).asPaddingValues(),
                             ) {
-                                items(
+                                itemsIndexed(
                                     items = it.items,
-                                ) { item ->
+                                    key = { index, item -> "browse_item_${item.id}_$index" },
+                                    contentType = { _, item ->
+                                        when (item) {
+                                            is SongItem -> "song_item"
+                                            is AlbumItem -> "album_item"
+                                            is ArtistItem -> "artist_item"
+                                            is PlaylistItem -> "playlist_item"
+                                        }
+                                    },
+                                ) { _, item ->
                                     YouTubeGridItem(
                                         item = item,
                                         isActive =

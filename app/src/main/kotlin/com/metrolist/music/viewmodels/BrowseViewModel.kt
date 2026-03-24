@@ -11,6 +11,7 @@ import com.metrolist.innertube.models.PlaylistItem
 import com.metrolist.innertube.models.YTItem
 import com.metrolist.innertube.utils.completed
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -26,7 +27,7 @@ class BrowseViewModel @Inject constructor(
     val title = MutableStateFlow<String?>("")
  
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             browseId?.let {
                 YouTube.browse(browseId, null).onSuccess { result ->
                     // Store the title

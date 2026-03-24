@@ -1,5 +1,8 @@
 package com.metrolist.music.ui.player
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -12,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -26,8 +30,12 @@ import com.google.android.gms.ads.LoadAdError
 import kotlinx.coroutines.delay
 import timber.log.Timber
 
-private const val AD_DISPLAY_DURATION_SECONDS = 7
-private const val AD_COOLDOWN_MS = 46_000L // 1 minute
+private const val AD_DISPLAY_DURATION_SECONDS = 5
+private const val AD_COOLDOWN_MS = 127_000L // 100 seconds (1 minute 40 seconds)
+
+// ---------------------------------------------------------------------------
+// PUBLIC COMPOSABLE
+// ---------------------------------------------------------------------------
 
 @Composable
 fun BannerAdWithTimer(
@@ -37,60 +45,68 @@ fun BannerAdWithTimer(
     onAdClosed: () -> Unit,
     onAdOpened: () -> Unit = {},
     useTimer: Boolean = true,
-    //  NEW: Added subscription parameter
     isSubscribed: Boolean = false
 ) {
-    //  FIX: Don't show ads to subscribed users
-    if (isSubscribed) {
-        return
-    }
+    if (isSubscribed) return
 
-    var adVisible by remember { mutableStateOf(true) }
+    // ---------------------------------------------------------------------------
+    // Track if we should show ad (based on cooldown only)
+    // ---------------------------------------------------------------------------
+    var cooldownComplete by remember { mutableStateOf(false) }
 
-    //  FIX #1: Make cooldown reactive with currentTimeMillis tracking
-    var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(mediaId, adViewModel.getAdClosedTime()) {
 
-    // Update current time every second to make cooldown reactive
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1000)
-            currentTime = System.currentTimeMillis()
+        val lastClosed = adViewModel.getAdClosedTime()
+
+        if (lastClosed == null) {
+            cooldownComplete = true
+            return@LaunchedEffect
+        }
+
+        val elapsed = System.currentTimeMillis() - lastClosed
+        val remaining = AD_COOLDOWN_MS - elapsed
+
+        if (remaining <= 0) {
+            cooldownComplete = true
+        } else {
+            cooldownComplete = false
+            delay(remaining)
+            cooldownComplete = true
         }
     }
 
-    val canShowAd by remember {
-        derivedStateOf {
-            val lastClosed = adViewModel.getAdClosedTime()
-            lastClosed == null || (currentTime - lastClosed) >= AD_COOLDOWN_MS
-        }
-    }
 
-    LaunchedEffect(canShowAd) {
-        if (canShowAd) {
-            adVisible = true            // allow showing again
-            adViewModel.triggerAdReload()
-        }
-    }
-
-    if (canShowAd && adVisible) {
+    // Show AdViewHolder when cooldown is complete
+    // It will stay visible until user explicitly closes it
+    if (cooldownComplete) {
         key(adViewModel.adReloadTick, mediaId) {
+            Timber.d("Rendering AdViewHolder for mediaId=$mediaId")
             AdViewHolder(
                 adUnitId = adUnitId,
                 adViewModel = adViewModel,
                 mediaId = mediaId,
                 useTimer = useTimer,
                 onAdClosed = {
-                    adVisible = false
+                    Timber.d("User closed ad - setting cooldown")
+                    // Set cooldown timestamp - this will make cooldownComplete false
+                    adViewModel.setAdClosedTime(System.currentTimeMillis())
+                    // Clear ad state
                     adViewModel.setAdLoaded(false)
                     adViewModel.setLoadedAdFor(null)
-                    adViewModel.setAdClosedTime(System.currentTimeMillis())
+                    // Increment reload tick for next ad
+                    adViewModel.triggerAdReload()
+                    // Call parent callback
                     onAdClosed()
                 },
-                onAdOpened = { onAdOpened() }
+                onAdOpened = onAdOpened
             )
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// PRIVATE: AdView host
+// ---------------------------------------------------------------------------
 
 @Composable
 private fun AdViewHolder(
@@ -104,8 +120,10 @@ private fun AdViewHolder(
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
-    // Remember a single AdView instance across recompositions
+    Timber.d("AdViewHolder: Creating for mediaId=$mediaId")
+
     val adView = remember {
+        Timber.d("Creating new AdView instance")
         AdView(context).apply {
             setAdSize(AdSize.MEDIUM_RECTANGLE)
             this.adUnitId = adUnitId
@@ -113,56 +131,80 @@ private fun AdViewHolder(
     }
 
     var adLoaded by remember { mutableStateOf(false) }
+    var adRendered by remember { mutableStateOf(false) }
     var timerValue by remember { mutableIntStateOf(AD_DISPLAY_DURATION_SECONDS) }
     var isTimerFinished by remember { mutableStateOf(false) }
+    var hasReportedClose by remember { mutableStateOf(false) }
 
-    // Load the ad only once
+    val closeAd: () -> Unit = {
+        if (!hasReportedClose) {
+            Timber.d("Closing ad")
+            hasReportedClose = true
+            onAdClosed()
+        }
+    }
+
+    // Load ad once
     LaunchedEffect(Unit) {
+        Timber.d("Loading ad request for mediaId=$mediaId")
+
         adView.adListener = object : AdListener() {
             override fun onAdLoaded() {
+                Timber.d("✅ Ad loaded successfully")
                 adLoaded = true
-                adViewModel.setAdLoaded(true)
-                adViewModel.setLoadedAdFor(mediaId)
                 onAdOpened()
             }
 
             override fun onAdFailedToLoad(error: LoadAdError) {
-                Timber.e("Ad failed to load: $error")
-                onAdClosed()
+                Timber.e("❌ Ad failed to load: ${error.message} (code ${error.code})")
+                closeAd()
+            }
+
+            override fun onAdClicked() {
+                Timber.d("Ad clicked")
             }
         }
+
         adView.loadAd(AdRequest.Builder().build())
     }
 
-    // Start timer only after ad loads
-    LaunchedEffect(adLoaded, useTimer) {
-        if (adLoaded) {
-            timerValue = AD_DISPLAY_DURATION_SECONDS
-            isTimerFinished = false
-            if (useTimer) {
-                repeat(AD_DISPLAY_DURATION_SECONDS) {
-                    delay(1000L)
-                    timerValue--
-                }
-                isTimerFinished = true
-            } else {
-                isTimerFinished = true
-            }
+    // Update ViewModel when ad is rendered
+    LaunchedEffect(adRendered) {
+        if (adRendered) {
+            Timber.d("✅ Ad rendered - updating ViewModel")
+            adViewModel.setAdLoaded(true)
+            adViewModel.setLoadedAdFor(mediaId)
         }
     }
 
-    // Lifecycle management for AdView
+    // Timer countdown
+    LaunchedEffect(adLoaded, useTimer) {
+        if (!adLoaded) return@LaunchedEffect
+        Timber.d("Starting timer")
+        timerValue = AD_DISPLAY_DURATION_SECONDS
+        isTimerFinished = false
+        if (useTimer) {
+            repeat(AD_DISPLAY_DURATION_SECONDS) {
+                delay(1_000L)
+                timerValue--
+            }
+        }
+        isTimerFinished = true
+        Timber.d("Timer finished")
+    }
+
+    // Lifecycle management
     DisposableEffect(lifecycleOwner, adView) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> adView.resume()
-                Lifecycle.Event.ON_PAUSE -> adView.pause()
-                Lifecycle.Event.ON_DESTROY -> adView.destroy()
+                Lifecycle.Event.ON_RESUME  -> adView.resume()
+                Lifecycle.Event.ON_PAUSE   -> adView.pause()
                 else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            Timber.d("Disposing AdViewHolder")
             lifecycleOwner.lifecycle.removeObserver(observer)
             adView.destroy()
         }
@@ -172,17 +214,56 @@ private fun AdViewHolder(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.wrapContentHeight()
     ) {
-        AndroidView(factory = { adView })
+        Box {
+            AndroidView(
+                factory = { adView },
+                update = {
+                    if (adLoaded && !adRendered) {
+                        Timber.d("Marking ad as rendered")
+                        adRendered = true
+                    }
+                }
+            )
 
-        if (adLoaded) {
+            // Fade in the label
+            val labelAlpha by animateFloatAsState(
+                targetValue = if (adRendered) 1f else 0f,
+                animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                label = "labelAlpha"
+            )
+
+            Text(
+                text = "Advertisement",
+                fontSize = 10.sp,
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .graphicsLayer { alpha = labelAlpha }
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
+
+        // Fade in controls
+        val controlsAlpha by animateFloatAsState(
+            targetValue = if (adRendered) 1f else 0f,
+            animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+            label = "controlsAlpha"
+        )
+
+        Box(modifier = Modifier.graphicsLayer { alpha = controlsAlpha }) {
             AdControls(
                 isTimerFinished = isTimerFinished,
                 timerValue = timerValue,
-                onCloseClicked = onAdClosed
+                onCloseClicked = closeAd
             )
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// PRIVATE: close / timer button
+// ---------------------------------------------------------------------------
 
 @Composable
 private fun AdControls(
@@ -190,18 +271,16 @@ private fun AdControls(
     timerValue: Int,
     onCloseClicked: () -> Unit
 ) {
-    Box(
-        modifier = Modifier.padding(top = 8.dp)
-    ) {
-        val modifier = Modifier
-            .background(Color.Gray.copy(alpha = 1.0f), RoundedCornerShape(50))
+    Box(modifier = Modifier.padding(top = 8.dp)) {
+        val baseModifier = Modifier
+            .background(Color(0xFF424242), RoundedCornerShape(50))
             .padding(horizontal = 10.dp, vertical = 5.dp)
 
         Text(
-            text = if (isTimerFinished) "Close" else "Ad ends in: ${timerValue}s",
+            text = if (isTimerFinished) "Close Ad" else "Ad closes in ${timerValue}s",
             fontSize = 12.sp,
             color = Color.White,
-            modifier = if (isTimerFinished) modifier.clickable { onCloseClicked() } else modifier
+            modifier = if (isTimerFinished) baseModifier.clickable { onCloseClicked() } else baseModifier
         )
     }
 }

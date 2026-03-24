@@ -7,7 +7,6 @@ import androidx.mediarouter.media.MediaRouteSelector
 import androidx.mediarouter.media.MediaRouter
 import com.google.android.gms.cast.CastMediaControlIntent
 import com.google.android.gms.cast.MediaInfo
-import com.google.android.gms.cast.MediaLoadRequestData
 import com.google.android.gms.cast.MediaMetadata
 import com.google.android.gms.cast.MediaQueueItem
 import com.google.android.gms.cast.MediaSeekOptions
@@ -18,6 +17,7 @@ import com.google.android.gms.cast.framework.SessionManager
 import com.google.android.gms.cast.framework.SessionManagerListener
 import com.google.android.gms.cast.framework.media.RemoteMediaClient
 import com.google.android.gms.common.images.WebImage
+import com.metrolist.music.cast.CastManager
 import com.metrolist.music.extensions.metadata
 import com.metrolist.music.models.MediaMetadata as AppMediaMetadata
 import com.metrolist.music.ui.utils.resize
@@ -46,6 +46,8 @@ class CastConnectionHandler(
     private val scope: CoroutineScope,
     private val musicService: MusicService
 ) {
+    private val appContext = context.applicationContext
+
     private var castContext: CastContext? = null
     private var sessionManager: SessionManager? = null
     private var mediaRouter: MediaRouter? = null
@@ -81,10 +83,103 @@ class CastConnectionHandler(
     private var currentMediaId: String? = null
     private var lastCastItemId: Int = -1
     private var isReloadingQueue: Boolean = false
+    private var isSessionManagerListenerRegistered: Boolean = false
+    private var pendingRouteSelection: MediaRouter.RouteInfo? = null
+    private var isReleased: Boolean = false
+    private val initLock = Any()
+    @Volatile
+    private var isInitializing: Boolean = false
 
     // Flag to prevent reverse sync when Cast triggers local player update
     var isSyncingFromCast: Boolean = false
         private set
+
+    private fun ensureRouteDiscoveryInitialized() {
+        if (mediaRouter == null) {
+            mediaRouter = MediaRouter.getInstance(appContext)
+        }
+        if (routeSelector == null) {
+            routeSelector = MediaRouteSelector.Builder()
+                .addControlCategory(
+                    CastMediaControlIntent.categoryForCast(
+                        CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID
+                    )
+                )
+                .build()
+        }
+    }
+
+    private fun attachRemoteMediaClient(client: RemoteMediaClient?) {
+        if (remoteMediaClient === client) return
+        remoteMediaClient?.unregisterCallback(remoteMediaClientCallback)
+        remoteMediaClient = client
+        remoteMediaClient?.registerCallback(remoteMediaClientCallback)
+    }
+
+    private fun bindSessionManagerIfNeeded(resolvedCastContext: CastContext) {
+        castContext = resolvedCastContext
+        sessionManager = resolvedCastContext.sessionManager
+        if (!isSessionManagerListenerRegistered) {
+            sessionManager?.addSessionManagerListener(sessionManagerListener, CastSession::class.java)
+            isSessionManagerListenerRegistered = true
+        }
+    }
+
+    private fun syncCurrentSessionState() {
+        val session = sessionManager?.currentCastSession ?: return
+        _isCasting.value = true
+        _isConnecting.value = false
+        _castDeviceName.value = session.castDevice?.friendlyName
+        castSession = session
+        attachRemoteMediaClient(session.remoteMediaClient)
+        startPositionUpdates()
+    }
+
+    private fun selectPendingRouteIfAny() {
+        val route = pendingRouteSelection ?: return
+        mediaRouter?.selectRoute(route)
+        pendingRouteSelection = null
+    }
+
+    private fun startLazyInitialization() {
+        synchronized(initLock) {
+            if (isReleased || isInitializing || sessionManager != null) {
+                selectPendingRouteIfAny()
+                return
+            }
+            isInitializing = true
+        }
+
+        scope.launch(Dispatchers.Default) {
+            val resolvedCastContext = try {
+                CastManager.getOrInitialize(appContext)
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to initialize Cast context")
+                null
+            }
+
+            withContext(Dispatchers.Main.immediate) {
+                synchronized(initLock) {
+                    isInitializing = false
+                }
+
+                if (isReleased) return@withContext
+                if (resolvedCastContext == null) {
+                    _isConnecting.value = false
+                    return@withContext
+                }
+
+                try {
+                    bindSessionManagerIfNeeded(resolvedCastContext)
+                    syncCurrentSessionState()
+                    selectPendingRouteIfAny()
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to bind Cast session manager")
+                    _isConnecting.value = false
+                }
+            }
+        }
+    }
 
     private val remoteMediaClientCallback = object : RemoteMediaClient.Callback() {
         override fun onStatusUpdated() {
@@ -352,8 +447,7 @@ class CastConnectionHandler(
             _isConnecting.value = false
             _castDeviceName.value = session.castDevice?.friendlyName
             castSession = session
-            remoteMediaClient = session.remoteMediaClient
-            remoteMediaClient?.registerCallback(remoteMediaClientCallback)
+            attachRemoteMediaClient(session.remoteMediaClient)
 
             // Get initial volume
             _castVolume.value = session.volume.toFloat()
@@ -389,8 +483,7 @@ class CastConnectionHandler(
             _castDeviceName.value = null
             castSession = null
 
-            remoteMediaClient?.unregisterCallback(remoteMediaClientCallback)
-            remoteMediaClient = null
+            attachRemoteMediaClient(null)
 
             stopPositionUpdates()
 
@@ -407,8 +500,8 @@ class CastConnectionHandler(
             _isConnecting.value = false
             _castDeviceName.value = session.castDevice?.friendlyName
 
-            remoteMediaClient = session.remoteMediaClient
-            remoteMediaClient?.registerCallback(remoteMediaClientCallback)
+            castSession = session
+            attachRemoteMediaClient(session.remoteMediaClient)
 
             startPositionUpdates()
         }
@@ -421,30 +514,9 @@ class CastConnectionHandler(
     }
 
     fun initialize(): Boolean {
-        return try {
-            castContext = CastContext.getSharedInstance(context)
-            sessionManager = castContext?.sessionManager
-            mediaRouter = MediaRouter.getInstance(context)
-            routeSelector = MediaRouteSelector.Builder()
-                .addControlCategory(CastMediaControlIntent.categoryForCast(CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID))
-                .build()
-
-            sessionManager?.addSessionManagerListener(sessionManagerListener, CastSession::class.java)
-
-            // Check if already connected
-            sessionManager?.currentCastSession?.let { session ->
-                _isCasting.value = true
-                _castDeviceName.value = session.castDevice?.friendlyName
-                remoteMediaClient = session.remoteMediaClient
-                remoteMediaClient?.registerCallback(remoteMediaClientCallback)
-                startPositionUpdates()
-            }
-
-            true
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to initialize Cast")
-            false
-        }
+        ensureRouteDiscoveryInitialized()
+        startLazyInitialization()
+        return true
     }
 
     fun getAvailableRoutes(): List<MediaRouter.RouteInfo> {
@@ -457,12 +529,14 @@ class CastConnectionHandler(
     }
 
     fun connectToRoute(route: MediaRouter.RouteInfo) {
-        // Ensure we're initialized before trying to connect
-        if (mediaRouter == null) {
-            initialize()
-        }
+        ensureRouteDiscoveryInitialized()
         _isConnecting.value = true
-        mediaRouter?.selectRoute(route)
+        pendingRouteSelection = route
+        if (sessionManager != null) {
+            selectPendingRouteIfAny()
+            return
+        }
+        startLazyInitialization()
     }
 
     fun disconnect() {
@@ -771,8 +845,20 @@ class CastConnectionHandler(
     }
 
     fun release() {
+        isReleased = true
+        pendingRouteSelection = null
+        synchronized(initLock) {
+            isInitializing = false
+        }
         stopPositionUpdates()
-        remoteMediaClient?.unregisterCallback(remoteMediaClientCallback)
-        sessionManager?.removeSessionManagerListener(sessionManagerListener, CastSession::class.java)
+        syncResetJob?.cancel()
+        attachRemoteMediaClient(null)
+        if (isSessionManagerListenerRegistered) {
+            sessionManager?.removeSessionManagerListener(sessionManagerListener, CastSession::class.java)
+            isSessionManagerListenerRegistered = false
+        }
+        sessionManager = null
+        castContext = null
+        castSession = null
     }
 }

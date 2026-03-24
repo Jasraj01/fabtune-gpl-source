@@ -3,7 +3,6 @@ package com.metrolist.music.utils
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
@@ -11,6 +10,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.preferencesDataStore
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.metrolist.music.extensions.toEnum
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -121,7 +121,7 @@ fun <T> rememberPreference(
             context.dataStore.data
                 .map { it[key] ?: defaultValue }
                 .distinctUntilChanged()
-        }.collectAsState(initialValue)
+        }.collectAsStateWithLifecycle(initialValue = initialValue)
 
     return remember {
         object : MutableState<T> {
@@ -157,7 +157,7 @@ inline fun <reified T : Enum<T>> rememberEnumPreference(
             context.dataStore.data
                 .map { it[key].toEnum(defaultValue = defaultValue) }
                 .distinctUntilChanged()
-        }.collectAsState(initialValue)
+        }.collectAsStateWithLifecycle(initialValue = initialValue)
 
     return remember {
         object : MutableState<T> {

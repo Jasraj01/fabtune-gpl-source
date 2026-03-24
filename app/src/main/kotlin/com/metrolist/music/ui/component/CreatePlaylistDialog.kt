@@ -22,58 +22,49 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
-import com.metrolist.innertube.YouTube
-import com.metrolist.music.LocalDatabase
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.metrolist.innertube.utils.parseCookieString
 import com.metrolist.music.R
-import com.metrolist.music.db.entities.PlaylistEntity
 import com.metrolist.music.constants.InnerTubeCookieKey
+import com.metrolist.music.data.playlist.PlaylistCreationRepository
 import com.metrolist.music.extensions.isSyncEnabled
 import com.metrolist.music.utils.rememberPreference
+import com.metrolist.music.viewmodels.PlaylistsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.LocalDateTime
-import java.util.logging.Logger
 
 @Composable
 fun CreatePlaylistDialog(
     onDismiss: () -> Unit,
     initialTextFieldValue: String? = null,
     allowSyncing: Boolean = true,
+    viewModel: PlaylistsViewModel = hiltViewModel(),
 ) {
-    val database = LocalDatabase.current
     val coroutineScope = rememberCoroutineScope()
     var syncedPlaylist by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     val innerTubeCookie by rememberPreference(InnerTubeCookieKey, "")
-    val isSignedIn = innerTubeCookie.isNotEmpty()
+    val isSignedIn = remember(innerTubeCookie) {
+        "SAPISID" in parseCookieString(innerTubeCookie)
+    }
 
     TextFieldDialog(
         icon = { Icon(painter = painterResource(R.drawable.add), contentDescription = null) },
         title = { Text(text = stringResource(R.string.create_playlist)) },
         initialTextFieldValue = TextFieldValue(initialTextFieldValue ?: ""),
+        isInputValid = { input ->
+            val trimmed = input.trim()
+            trimmed.isNotBlank() && trimmed.length <= PlaylistCreationRepository.MAX_PLAYLIST_NAME_LENGTH
+        },
         onDismiss = onDismiss,
         onDone = { playlistName ->
-            coroutineScope.launch(Dispatchers.IO) {
-                val browseId = if (syncedPlaylist && isSignedIn) {
-                    YouTube.createPlaylist(playlistName)
-                } else if (syncedPlaylist) {
-                    Logger.getLogger("CreatePlaylistDialog").warning("Not signed in")
-                    return@launch
-                } else null
-
-                database.query {
-                    insert(
-                        PlaylistEntity(
-                            name = playlistName,
-                            browseId = browseId,
-                            bookmarkedAt = LocalDateTime.now(),
-                            isEditable = true,
-                        )
-                    )
-                }
-            }
+            viewModel.createPlaylist(
+                name = playlistName,
+                syncWithYouTube = syncedPlaylist,
+                isSignedIn = isSignedIn,
+            )
         },
         extraContent = {
             if (allowSyncing) {

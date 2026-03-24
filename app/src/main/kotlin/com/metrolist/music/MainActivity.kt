@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.graphics.Color as AndroidColor
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
@@ -17,7 +18,9 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -69,7 +72,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
@@ -91,7 +93,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -105,7 +106,6 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -118,7 +118,9 @@ import androidx.core.net.toUri
 import androidx.core.util.Consumer
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -157,6 +159,7 @@ import com.metrolist.music.constants.PureBlackKey
 import com.metrolist.music.constants.SlimNavBarHeight
 import com.metrolist.music.constants.SlimNavBarKey
 import com.metrolist.music.constants.StopMusicOnTaskClearKey
+import com.metrolist.music.constants.EnableHighRefreshRateKey
 import com.metrolist.music.db.MusicDatabase
 import com.metrolist.music.models.toMediaMetadata
 import com.metrolist.music.playback.DownloadUtil
@@ -179,6 +182,7 @@ import com.metrolist.music.ui.reviewbox.ReviewDataStore
 import com.metrolist.music.ui.reviewbox.triggerInAppReviewIfEligible
 import com.metrolist.music.ui.screens.Screens
 import com.metrolist.music.ui.screens.LocalIsSubscribed
+import com.metrolist.music.ui.screens.LocalIsSubscriptionResolved
 import com.metrolist.music.ui.screens.navigationBuilder
 import com.metrolist.music.ui.screens.settings.DarkMode
 import com.metrolist.music.ui.screens.settings.NavigationTab
@@ -188,6 +192,7 @@ import com.metrolist.music.ui.theme.MetrolistTheme
 import com.metrolist.music.ui.theme.extractThemeColor
 import com.metrolist.music.ui.utils.appBarScrollBehavior
 import com.metrolist.music.ui.utils.resetHeightOffset
+import com.metrolist.music.utils.DebugFrameMonitor
 import com.metrolist.music.utils.SyncUtils
 import com.metrolist.music.utils.Updater
 import com.metrolist.music.constants.AppLanguageKey
@@ -213,6 +218,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -227,7 +233,6 @@ import com.google.android.ump.UserMessagingPlatform
 import com.metrolist.music.ui.component.PopupScreen
 import kotlin.jvm.java
 import java.util.concurrent.atomic.AtomicBoolean
-
 @Suppress("DEPRECATION", "ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -238,6 +243,8 @@ class MainActivity : ComponentActivity() {
         private const val ACTION_LIBRARY = "com.fabtune.music.player.action.LIBRARY"
         private const val DEFERRED_STARTUP_DELAY_MS = 1200L
         private const val DEFERRED_SUBSCRIPTION_FETCH_DELAY_MS = 300L
+        private const val DEFERRED_REVIEW_PROMPT_DELAY_MS = 25_000L
+        private const val REVIEW_PROMPT_RETRY_DELAY_MS = 5_000L
 
         // ADVANCED FIX – Bluetooth/background resilience visibility flag
         @Volatile
@@ -271,26 +278,55 @@ class MainActivity : ComponentActivity() {
             if (service is MusicBinder) {
                 playerConnection = PlayerConnection(this@MainActivity, service, database, lifecycleScope)
                 isBound = true
+                isServiceBindRequested = false
             }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             playerConnection?.dispose()
             playerConnection = null
+            isBound = false
+            isServiceBindRequested = false
         }
     }
 
     private var isBound = false
+    private var isServiceBindRequested = false
     private var deferredStartupJob: Job? = null
+    private var deferredReviewPromptJob: Job? = null
+    private var hasAttemptedReviewThisForegroundSession = false
 
     private val deferredServiceBindRunnable = Runnable {
-        if (!isInForeground || isBound || isFinishing || isDestroyed) return@Runnable
-        // Bind playback service one frame later to reduce warm-start main-thread pressure.
-        bindService(
-            Intent(this, MusicService::class.java),
-            serviceConnection,
+        // Guard with both the flag AND a hard lifecycle check to prevent the race condition
+        // where the post() callback fires after the activity has already gone to background.
+        // On Android 12+ (SDK 31+) calling startForegroundService() from background throws
+        // ForegroundServiceStartNotAllowedException. bindService(BIND_AUTO_CREATE) triggers an
+        // implicit startForegroundService() inside MediaLibraryService, so we MUST be in the
+        // foreground (STARTED state) before binding.
+        if (!isInForeground || isBound || isServiceBindRequested || isFinishing || isDestroyed) return@Runnable
+        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return@Runnable
+
+        val bindFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // API 34+: BIND_ALLOW_ACTIVITY_STARTS tells the OS this bind is on behalf of a
+            // visible activity, permitting the service to call startForeground() safely.
+            BIND_AUTO_CREATE or BIND_ALLOW_ACTIVITY_STARTS
+        } else {
             BIND_AUTO_CREATE
-        )
+        }
+
+        val bindRequested = runCatching {
+            bindService(
+                Intent(this, MusicService::class.java),
+                serviceConnection,
+                bindFlags
+            )
+        }.getOrElse {
+            reportException(it)
+            false
+        }
+        if (bindRequested) {
+            isServiceBindRequested = true
+        }
     }
 
     private val deferredNotificationPermissionRunnable = Runnable {
@@ -305,30 +341,72 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         // ADVANCED FIX – Bluetooth/background resilience: track foreground state
         isInForeground = true
+        hasAttemptedReviewThisForegroundSession = false
+        DebugFrameMonitor.start()
         window.decorView.post(deferredNotificationPermissionRunnable)
         window.decorView.post(deferredServiceBindRunnable)
+        lifecycleScope.launch(Dispatchers.IO) {
+            reviewDataStore.incrementForegroundSessionCount()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (isFinishing || isDestroyed) return
+        scheduleDeferredReviewPrompt()
     }
 
     override fun onStop() {
         // ADVANCED FIX – Bluetooth/background resilience: track background state
         isInForeground = false
+        deferredReviewPromptJob?.cancel()
+        deferredReviewPromptJob = null
+        DebugFrameMonitor.stop()
         window.decorView.removeCallbacks(deferredNotificationPermissionRunnable)
         window.decorView.removeCallbacks(deferredServiceBindRunnable)
         if (isBound) {
-            unbindService(serviceConnection)
+            runCatching {
+                unbindService(serviceConnection)
+            }.onFailure {
+                reportException(it)
+            }
             isBound = false
         }
-
-        val isCalmState = !isChangingConfigurations
-        lifecycleScope.launch {
-            triggerInAppReviewIfEligible(
-                activity = this@MainActivity,
-                reviewDataStore = reviewDataStore,
-                isAppCalm = isCalmState,
-            )
-        }
+        isServiceBindRequested = false
 
         super.onStop()
+    }
+
+    private fun scheduleDeferredReviewPrompt() {
+        deferredReviewPromptJob?.cancel()
+        deferredReviewPromptJob = lifecycleScope.launch {
+            delay(DEFERRED_REVIEW_PROMPT_DELAY_MS)
+
+            while (true) {
+                if (!isInForeground || isFinishing || isDestroyed || hasAttemptedReviewThisForegroundSession) {
+                    return@launch
+                }
+
+                val hasPlaybackHistory = withContext(Dispatchers.IO) {
+                    database.firstEvent().first() != null
+                }
+                if (!hasPlaybackHistory) return@launch
+
+                if (isChangingConfigurations || !hasWindowFocus()) {
+                    delay(REVIEW_PROMPT_RETRY_DELAY_MS)
+                    continue
+                }
+
+                hasAttemptedReviewThisForegroundSession = triggerInAppReviewIfEligible(
+                    activity = this@MainActivity,
+                    reviewDataStore = reviewDataStore,
+                    currentVersionCode = BuildConfig.VERSION_CODE,
+                    hasPlaybackHistory = true,
+                    isAppCalm = true,
+                )
+                return@launch
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -338,6 +416,8 @@ class MainActivity : ComponentActivity() {
             try {
                 unbindService(serviceConnection)
             } catch (_: Exception) {}
+            isBound = false
+            isServiceBindRequested = false
 
             stopService(Intent(this, MusicService::class.java))
             playerConnection = null
@@ -359,8 +439,11 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT),
+        )
         window.decorView.layoutDirection = View.LAYOUT_DIRECTION_LTR
-        WindowCompat.setDecorFitsSystemWindows(window, false)
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             val locale = dataStore[AppLanguageKey]
@@ -378,40 +461,44 @@ class MainActivity : ComponentActivity() {
         scheduleDeferredStartupWork()
 
         lifecycleScope.launch {
-            dataStore.data
-                .map { it[DisableScreenshotKey] ?: false }
-                .distinctUntilChanged()
-                .collectLatest {
-                    if (it) {
-                        window.setFlags(
-                            WindowManager.LayoutParams.FLAG_SECURE,
-                            WindowManager.LayoutParams.FLAG_SECURE,
-                        )
-                    } else {
-                        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                dataStore.data
+                    .map { it[DisableScreenshotKey] ?: false }
+                    .distinctUntilChanged()
+                    .collectLatest {
+                        if (it) {
+                            window.setFlags(
+                                WindowManager.LayoutParams.FLAG_SECURE,
+                                WindowManager.LayoutParams.FLAG_SECURE,
+                            )
+                        } else {
+                            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        }
                     }
-                }
+            }
         }
 
         setContent {
             val subscriptionState = remember { mutableStateOf(false) }
+            val isSubscriptionResolvedState = remember { mutableStateOf(false) }
             val composeScope = rememberCoroutineScope()
             DisposableEffect(Unit) {
                 val listener = UpdatedCustomerInfoListener { customerInfo ->
                     subscriptionState.value =
                         customerInfo.entitlements.active.containsKey("premium")
+                    isSubscriptionResolvedState.value = true
                 }
                 Purchases.sharedInstance.updatedCustomerInfoListener = listener
                 val initialCustomerInfoJob = composeScope.launch {
-                    delay(DEFERRED_SUBSCRIPTION_FETCH_DELAY_MS)
                     Purchases.sharedInstance.getCustomerInfo(object : ReceiveCustomerInfoCallback {
                         override fun onReceived(customerInfo: CustomerInfo) {
                             subscriptionState.value =
                                 customerInfo.entitlements.active.containsKey("premium")
+                            isSubscriptionResolvedState.value = true
                         }
 
                         override fun onError(error: PurchasesError) {
-                            subscriptionState.value = false
+                            isSubscriptionResolvedState.value = false
                         }
                     })
                 }
@@ -423,6 +510,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             val isSubscribed = subscriptionState.value
+            val isSubscriptionResolved = isSubscriptionResolvedState.value
 
             LaunchedEffect(Unit) {
                 delay(DEFERRED_STARTUP_DELAY_MS)
@@ -437,6 +525,35 @@ class MainActivity : ComponentActivity() {
             }
 
             val enableDynamicTheme by rememberPreference(DynamicThemeKey, defaultValue = true)
+            val enableHighRefreshRate by rememberPreference(EnableHighRefreshRateKey, defaultValue = true)
+
+            LaunchedEffect(enableHighRefreshRate) {
+                val window = this@MainActivity.window
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    val layoutParams = window.attributes
+                    if (enableHighRefreshRate) {
+                        layoutParams.preferredDisplayModeId = 0
+                    } else {
+                        val modes = window.windowManager.defaultDisplay.supportedModes
+                        val mode60 = modes.firstOrNull { kotlin.math.abs(it.refreshRate - 60f) < 1f }
+                            ?: modes.minByOrNull { kotlin.math.abs(it.refreshRate - 60f) }
+
+                        if (mode60 != null) {
+                            layoutParams.preferredDisplayModeId = mode60.modeId
+                        }
+                    }
+                    window.attributes = layoutParams
+                } else {
+                    val params = window.attributes
+                    if (enableHighRefreshRate) {
+                        params.preferredRefreshRate = 0f
+                    } else {
+                        params.preferredRefreshRate = 60f
+                    }
+                    window.attributes = params
+                }
+            }
+
             val darkTheme by rememberEnumPreference(DarkModeKey, defaultValue = DarkMode.ON)
             val isSystemInDarkTheme = isSystemInDarkTheme()
             val useDarkTheme = remember(darkTheme, isSystemInDarkTheme) {
@@ -513,7 +630,7 @@ class MainActivity : ComponentActivity() {
 
                     val paywallViewModel: PaywallViewModel = hiltViewModel()
 
-                    val paywallUiState by paywallViewModel.uiState.collectAsState()
+                    val paywallUiState by paywallViewModel.uiState.collectAsStateWithLifecycle()
                     LaunchedEffect(isSubscribed) {
                         paywallViewModel.onSubscriptionStateChanged(isSubscribed)
                     }
@@ -543,7 +660,6 @@ class MainActivity : ComponentActivity() {
                         snapshotFlow { shouldShowPaywall }
                             .distinctUntilChanged()
                             .collect { show ->
-                                Timber.d("HomeScreen: shouldShowPaywall=$show")
                                 if (show) {
                                     val currentRoute =
                                         navController.currentBackStackEntry?.destination?.route
@@ -578,6 +694,12 @@ class MainActivity : ComponentActivity() {
                     val (previousTab, setPreviousTab) = rememberSaveable { mutableStateOf("home") }
 
                     val navigationItems = remember { Screens.MainScreens }
+                    val navigationRouteIndices = remember(navigationItems) {
+                        navigationItems.mapIndexed { index, screen -> screen.route to index }.toMap()
+                    }
+                    val routeIndexFor = remember(navigationRouteIndices) {
+                        { route: String? -> navigationRouteIndices[route] ?: -1 }
+                    }
                     val (slimNav) = rememberPreference(SlimNavBarKey, defaultValue = false)
                     val (useNewMiniPlayerDesign) = rememberPreference(
                         UseNewMiniPlayerDesignKey,
@@ -605,7 +727,6 @@ class MainActivity : ComponentActivity() {
                             "settings",
                         )
                     }
-
                     val (query, onQueryChange) =
                         rememberSaveable(stateSaver = TextFieldValue.Saver) {
                             mutableStateOf(TextFieldValue())
@@ -975,6 +1096,7 @@ class MainActivity : ComponentActivity() {
                         LocalSyncUtils provides syncUtils,
                         LocalIsPlayerExpanded provides (!playerBottomSheetState.isCollapsed && !playerBottomSheetState.isDismissed),
                         LocalIsSubscribed provides isSubscribed,
+                        LocalIsSubscriptionResolved provides isSubscriptionResolved,
                     ) {
                         Scaffold(
                             snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -1298,7 +1420,7 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                                 Box(Modifier.weight(1f)) {
-                                    // NavHost with animations (Material 3 Expressive style)
+                                    // Match the upstream Metrolist navigation motion profile.
                                     NavHost(
                                         navController = navController,
                                         startDestination = when (tabOpenedFromShortcut
@@ -1306,63 +1428,54 @@ class MainActivity : ComponentActivity() {
                                             NavigationTab.HOME -> Screens.Home
                                             NavigationTab.EXPLORE -> Screens.Explore
                                             NavigationTab.LIBRARY -> Screens.Library
-                                            else -> Screens.Home
                                         }.route,
-                                        // Enter Transition - smoother with smaller offset and longer duration
                                         enterTransition = {
-                                            val currentRouteIndex = navigationItems.indexOfFirst {
-                                                it.route == targetState.destination.route
-                                            }
-                                            val previousRouteIndex = navigationItems.indexOfFirst {
-                                                it.route == initialState.destination.route
-                                            }
+                                            val currentRouteIndex =
+                                                routeIndexFor(targetState.destination.route)
+                                            val previousRouteIndex =
+                                                routeIndexFor(initialState.destination.route)
 
-                                            if (currentRouteIndex == -1 || currentRouteIndex > previousRouteIndex)
+                                            if (currentRouteIndex == -1 || currentRouteIndex > previousRouteIndex) {
                                                 slideInHorizontally { it / 8 } + fadeIn(tween(200))
-                                            else
+                                            } else {
                                                 slideInHorizontally { -it / 8 } + fadeIn(tween(200))
+                                            }
                                         },
-                                        // Exit Transition - smoother with smaller offset and longer duration
                                         exitTransition = {
-                                            val currentRouteIndex = navigationItems.indexOfFirst {
-                                                it.route == initialState.destination.route
-                                            }
-                                            val targetRouteIndex = navigationItems.indexOfFirst {
-                                                it.route == targetState.destination.route
-                                            }
+                                            val targetRouteIndex =
+                                                routeIndexFor(targetState.destination.route)
+                                            val initialRouteIndex =
+                                                routeIndexFor(initialState.destination.route)
 
-                                            if (targetRouteIndex == -1 || targetRouteIndex > currentRouteIndex)
+                                            if (targetRouteIndex == -1 || targetRouteIndex > initialRouteIndex) {
                                                 slideOutHorizontally { -it / 8 } + fadeOut(tween(200))
-                                            else
+                                            } else {
                                                 slideOutHorizontally { it / 8 } + fadeOut(tween(200))
+                                            }
                                         },
-                                        // Pop Enter Transition - smoother with smaller offset and longer duration
                                         popEnterTransition = {
-                                            val currentRouteIndex = navigationItems.indexOfFirst {
-                                                it.route == targetState.destination.route
-                                            }
-                                            val previousRouteIndex = navigationItems.indexOfFirst {
-                                                it.route == initialState.destination.route
-                                            }
+                                            val currentRouteIndex =
+                                                routeIndexFor(targetState.destination.route)
+                                            val previousRouteIndex =
+                                                routeIndexFor(initialState.destination.route)
 
-                                            if (previousRouteIndex != -1 && previousRouteIndex < currentRouteIndex)
+                                            if (previousRouteIndex != -1 && previousRouteIndex < currentRouteIndex) {
                                                 slideInHorizontally { it / 8 } + fadeIn(tween(200))
-                                            else
+                                            } else {
                                                 slideInHorizontally { -it / 8 } + fadeIn(tween(200))
+                                            }
                                         },
-                                        // Pop Exit Transition - smoother with smaller offset and longer duration
                                         popExitTransition = {
-                                            val currentRouteIndex = navigationItems.indexOfFirst {
-                                                it.route == initialState.destination.route
-                                            }
-                                            val targetRouteIndex = navigationItems.indexOfFirst {
-                                                it.route == targetState.destination.route
-                                            }
+                                            val targetRouteIndex =
+                                                routeIndexFor(targetState.destination.route)
+                                            val initialRouteIndex =
+                                                routeIndexFor(initialState.destination.route)
 
-                                            if (currentRouteIndex != -1 && currentRouteIndex < targetRouteIndex)
+                                            if (initialRouteIndex != -1 && initialRouteIndex < targetRouteIndex) {
                                                 slideOutHorizontally { -it / 8 } + fadeOut(tween(200))
-                                            else
+                                            } else {
                                                 slideOutHorizontally { it / 8 } + fadeOut(tween(200))
+                                            }
                                         },
                                         modifier = Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection)
                                     ) {
@@ -1548,7 +1661,7 @@ class MainActivity : ComponentActivity() {
                 // MUST comment out before production!
 
                 val testDeviceIds = listOf(
-                    "D4529930AAA10B74780E7F9DCE262852"  // Replace with your device ID
+                    ""  // Replace with your device ID
                 )
                 requestConfigBuilder.setTestDeviceIds(testDeviceIds)
                 Timber.d("TEST MODE: Using test device IDs")
@@ -1692,12 +1805,6 @@ class MainActivity : ComponentActivity() {
         WindowCompat.getInsetsController(window, window.decorView.rootView).apply {
             isAppearanceLightStatusBars = !isDark
             isAppearanceLightNavigationBars = !isDark
-        }
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            window.statusBarColor = (if (isDark) Color.Transparent else Color.Black.copy(alpha = 0.2f)).toArgb()
-        }
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            window.navigationBarColor = (if (isDark) Color.Transparent else Color.Black.copy(alpha = 0.2f)).toArgb()
         }
     }
 

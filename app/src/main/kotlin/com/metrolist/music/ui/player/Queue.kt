@@ -9,8 +9,8 @@ import androidx.activity.compose.BackHandler
 import android.annotation.SuppressLint
 import android.text.format.Formatter
 import android.widget.Toast
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -18,6 +18,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -439,9 +440,10 @@ fun Queue(
                                 tint = TextBackgroundColor
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            AnimatedContent(
+                            Crossfade(
                                 label = "sleepTimer",
                                 targetState = sleepTimerEnabled,
+                                animationSpec = tween(durationMillis = 140),
                             ) { enabled ->
                                 if (enabled) {
                                     Text(
