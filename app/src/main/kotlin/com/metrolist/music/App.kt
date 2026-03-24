@@ -61,6 +61,7 @@ class App : Application(), SingletonImageLoader.Factory {
         CrashHandler.install(this)
         CipherDeobfuscator.initialize(this)
 
+        val apiKey = ""
         Purchases.configure(
             PurchasesConfiguration.Builder(this, apiKey)
                 .build()
